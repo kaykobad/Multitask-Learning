@@ -1,0 +1,7 @@
+**/.DS_Store
+**/.idea
+Code-metaformer/data/*
+Code-MBT/*
+Code-vatt/vision_vatt_misc_data.tgz
+MML-Code/datasets/*
+**/__pycache__/
