@@ -46,16 +46,16 @@ def load_dataset(name):
         # transforms.ToTensor(),
     ])
 
-    # train_dataset = loader(path, annotation, frames_per_clip=8, step_between_clips=1, train=True, transform=tfs)
-    # train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=128, shuffle=True)
+    train_dataset = dataset(path, annotation, frames_per_clip=8, step_between_clips=1, train=True, transform=tfs)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=128, shuffle=True)
     test_dataset = dataset(path, annotation, frames_per_clip=8, step_between_clips=1, train=False, transform=tfs)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=128, shuffle=False)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=32, shuffle=False)
 
-    # print(f"Total number of train samples: {len(train_dataset)}")
+    print(f"Total number of train samples: {len(train_dataset)}")
     print(f"Total number of test samples: {len(test_dataset)}")
-    # print(f"Total number of (train) batches: {len(train_loader)}")
+    print(f"Total number of (train) batches: {len(train_loader)}")
     print(f"Total number of (test) batches: {len(test_loader)}")
     print()
 
-    return test_dataset, test_loader
-    # return train_dataset, train_loader, test_dataset, test_loader
+    # return test_dataset, test_loader
+    return train_dataset, train_loader, test_dataset, test_loader
