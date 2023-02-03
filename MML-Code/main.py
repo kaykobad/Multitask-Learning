@@ -9,17 +9,18 @@ import numpy as np
 from torch.autograd import Variable
 from dataloaders import load_dataset, Datasets
 from my_models import ModalitySpecificTransformer
+from model_summary import summary
 
 device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 print("Device:", device)
 
 
 class Manager(object):
-    def __init__(self, mm_model, batch_size=64):
+    def __init__(self, mm_model):
         self.model = mm_model
         self.batch_size = batch_size
 
-        self.train_dataset, self.train_loader, self.test_dataset, self.test_loader = load_dataset(Datasets.ucf101)
+        self.train_dataset, self.train_loader, self.test_dataset, self.test_loader = load_dataset(dataset, batch_size=batch_size, frame_per_clip=frame_per_clip)
         self.criterion = nn.CrossEntropyLoss()
 
     def eval(self):
@@ -30,7 +31,8 @@ class Manager(object):
         ts_running_loss = 0
 
         with torch.no_grad():
-            for video, audio, label in tqdm(self.test_loader, desc='Eval'):
+            # TODO: Add audio
+            for video, label in tqdm(self.test_loader, desc='Eval'):
                 batch = video.to(device)
                 label = label.to(device)
 
@@ -219,23 +221,29 @@ class MultipleOptimizer(object):
 
 
 def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total_params = sum(p.numel() for p in model.parameters())
+    return sum(p.numel() for p in model.parameters() if p.requires_grad), total_params
 
 
 def main():
-    wandb.init(project="My-Imagenet-Sketch", entity="kaykobad", name="UCF101")
-    print('number of output layer and dataset: ', 101, "ucf101")
+    wandb.init(project="MTL-with-Transformer", entity="kaykobad", name=wandb_name)
+    print('number of output layer and dataset: ', num_outputs, dataset)
 
-    model = ModalitySpecificTransformer()
+    model = ModalitySpecificTransformer(batch_dim=(batch_size, frame_per_clip, 3, 224, 224))
     model = nn.DataParallel(model)
     model = model.to(device)
 
     for name, param in model.named_parameters():
-        if 'classification_head.' not in name or 'video_embedding.' not in name:
+        # print(name, name.split("."), "classification_head" not in name, "classification_head" not in name.split("."))
+        if ('classification_head' not in name) and ('video_embedding' not in name):
             param.requires_grad = False
+        else:
+            param.requires_grad = True
+            print(name, "Not freezed")
 
-    num_param = count_parameters(model)
-    print('Total number of parameters: ', num_param)
+    trainable_params, total_params = count_parameters(model)
+    print('Total number of trainable parameters: ', trainable_params)
+    print('Total number of parameters: ', total_params)
     params_to_optimize = model.parameters()
     optimizer = optim.Adam(params_to_optimize, lr=lr)
 
@@ -243,15 +251,17 @@ def main():
     schedulers = [scheduler]
     optimizers = MultipleOptimizer(optimizer)
 
-    print("Running on: ", device)
-    print("Model summary:")
-    # total_params, trainable_params = summary(model, (3, 224, 224))
+    # print("Model summary:")
+    # total_params, trainable_params = summary(model, (8, 3, 224, 224))
     # print("Total params:", total_params, "Trainable params:", trainable_params)
 
     print(torch.cuda.memory_summary(device=None, abbreviated=False))
+    print(model)
+
+    # print(torch.cuda.memory_summary(device=None, abbreviated=False))
     # print(model)
 
-    manager = Manager(model, batch_size)
+    manager = Manager(model)
     manager.train(finetune_epochs, optimizers, schedulers, save=True, savename=save_name)
 
     # test_dataset, test_dataloader = load_dataset(Datasets.ucf101)
@@ -289,23 +299,18 @@ if __name__ == '__main__':
 
     NUM_OUTPUTS = {
         "ucf101": 101,
+        "hmdb51": 51,
     }
 
-    # Parameters
-    # use_masks = [False, False, False, False]
-    # mask_rank = 5
-    dataset = 'ucf101'
+    frame_per_clip = 8
+    dataset = 'hmdb51'
     checkpoint_suffix = '_fc'
-    batch_size = 32
+    batch_size = 4
     lr = 5e-3
-    finetune_epochs = 30
+    finetune_epochs = 2
     save_name = 'checkpoints/' + dataset + checkpoint_suffix + '.pth'
     num_outputs = NUM_OUTPUTS[dataset]
-    # optimize_bn = True
-    wandb_name = 'UCF101-FC'
-    # dense_mask = False
-    # dense_2d_mask = False
-    # use_dense_masks = [False, False, False]
+    wandb_name = 'HMDB51-FC'
 
     # Setting the seed
     torch.manual_seed(0)

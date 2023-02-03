@@ -83,7 +83,7 @@ class PatchEmbed(nn.Module):
         x = x + self.pos_embed
         x = torch.cat((cls_tokens, x), dim=1)
 
-        print("Embedding shape:", x.shape)
+        # print("Embedding shape:", x.shape)
 
         return x
 
@@ -123,7 +123,6 @@ class ModalitySpecificTransformer(torch.nn.Module):
 
         self.video_embedding = PatchEmbed(batch_dim=batch_dim, patch_size=patch_size, in_channels=in_channel, embed_dims=d_model)
         self.vit_encoder = ViTModel.from_pretrained('google/vit-base-patch16-224-in21k')
-        self.video_encoder = self.vit_encoder.encoder
         # self.ast_encoder = ASTModel.from_pretrained("MIT/ast-finetuned-audioset-10-10-0.4593")
         # self.fusion = FusionLayer()
 
@@ -133,8 +132,11 @@ class ModalitySpecificTransformer(torch.nn.Module):
 
     def forward(self, v):
         v = self.video_embedding(v)
-        v = self.video_encoder(v)
-        out = self.classification_head(v['last_hidden_state'][:, 0, :])
+        v = self.vit_encoder.encoder(v)
+        sequence_output = v[0]
+        sequence_output = self.vit_encoder.layernorm(sequence_output)
+        pooled_output = self.vit_encoder.pooler(sequence_output)
+        out = self.classification_head(pooled_output)
 
         # return {
         #     # "audio_feature": out_audio,

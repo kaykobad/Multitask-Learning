@@ -2,11 +2,12 @@ import torch
 
 from torch import nn
 from torchvision import transforms
-from torchvision.datasets import UCF101
+from torchvision.datasets import UCF101, HMDB51
 
 
 class Datasets:
     ucf101 = "ucf101"
+    hmdb51 = "hmdb51"
 
 
 data_config = {
@@ -14,18 +15,23 @@ data_config = {
         "dir": "datasets\\data\\UCF-101",
         "annotation": "datasets\\annotations\\UCF101-RecognitionTask",
         "dataset": UCF101
+    },
+    "hmdb51": {
+        "dir": "datasets\\data\\HMDB51",
+        "annotation": "datasets\\annotations\\HMDB51",
+        "dataset": HMDB51
     }
 }
 
 
-# def custom_collate(batch):
-#     filtered_batch = []
-#     for video, _, label in batch:
-#         filtered_batch.append((video, label))
-#     return torch.utils.data.dataloader.default_collate(filtered_batch)
+def custom_collate(batch):
+    filtered_batch = []
+    for video, _, label in batch:
+        filtered_batch.append((video, label))
+    return torch.utils.data.dataloader.default_collate(filtered_batch)
 
 
-def load_dataset(name):
+def load_dataset(name, batch_size=32, frame_per_clip=8):
     config = data_config[name]
     path = config["dir"]
     annotation = config["annotation"]
@@ -46,10 +52,10 @@ def load_dataset(name):
         # transforms.ToTensor(),
     ])
 
-    train_dataset = dataset(path, annotation, frames_per_clip=8, step_between_clips=1, train=True, transform=tfs)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=128, shuffle=True)
-    test_dataset = dataset(path, annotation, frames_per_clip=8, step_between_clips=1, train=False, transform=tfs)
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=32, shuffle=False)
+    train_dataset = dataset(path, annotation, frames_per_clip=frame_per_clip, step_between_clips=1, train=True, transform=tfs)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=custom_collate)
+    test_dataset = dataset(path, annotation, frames_per_clip=frame_per_clip, step_between_clips=1, train=False, transform=tfs)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, collate_fn=custom_collate)
 
     print(f"Total number of train samples: {len(train_dataset)}")
     print(f"Total number of test samples: {len(test_dataset)}")
