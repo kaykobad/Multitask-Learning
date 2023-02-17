@@ -12,8 +12,10 @@ class Datasets:
 
 data_config = {
     "ucf101": {
-        "dir": "datasets\\data\\UCF-101",
-        "annotation": "datasets\\annotations\\UCF101-RecognitionTask",
+        # "dir": "datasets\\data\\UCF-101",
+        # "annotation": "datasets\\annotations\\UCF101-RecognitionTask",
+        "dir": "datasets\\data\\Tiny-UCF",
+        "annotation": "datasets\\annotations\\Tiny-UCF",
         "dataset": UCF101
     },
     "hmdb51": {
@@ -26,8 +28,13 @@ data_config = {
 
 def custom_collate(batch):
     filtered_batch = []
-    for video, _, label in batch:
+    for video, audio, label in batch:
+        # print(audio.shape, video.shape, label)
+        # audio = audio.mean(0)
+        # print(audio.shape)
+        # filtered_batch.append((video, audio, label))
         filtered_batch.append((video, label))
+        # print(audio.shape)
     return torch.utils.data.dataloader.default_collate(filtered_batch)
 
 
@@ -43,18 +50,19 @@ def load_dataset(name, batch_size=32, frame_per_clip=8):
         # scale in [0, 1] of type float
         transforms.Lambda(lambda x: x / 255.),
         # reshape into (T, C, H, W) for easier convolutions
-        transforms.Lambda(lambda x: x.permute(0, 3, 1, 2)),
+        # transforms.Lambda(lambda x: x.permute(0, 3, 1, 2)),
         # rescale to the most common size
         transforms.Lambda(lambda x: nn.functional.interpolate(x, (224, 224))),
-        transforms.RandomResizedCrop(224),
-        transforms.RandomHorizontalFlip(),
-        transforms.ColorJitter(brightness=32/255, saturation=0.4, contrast=0.4, hue=0.2),
+        # TODO: Uncomment the following 3 lines
+        # transforms.RandomResizedCrop(224),
+        # transforms.RandomHorizontalFlip(),
+        # transforms.ColorJitter(brightness=32/255, saturation=0.4, contrast=0.4, hue=0.2),
         # transforms.ToTensor(),
     ])
 
-    train_dataset = dataset(path, annotation, frames_per_clip=frame_per_clip, step_between_clips=1, train=True, transform=tfs)
+    train_dataset = dataset(path, annotation, frames_per_clip=frame_per_clip, step_between_clips=1, train=True, transform=tfs, output_format='TCHW')
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=custom_collate)
-    test_dataset = dataset(path, annotation, frames_per_clip=frame_per_clip, step_between_clips=1, train=False, transform=tfs)
+    test_dataset = dataset(path, annotation, frames_per_clip=frame_per_clip, step_between_clips=1, train=False, transform=tfs, output_format='TCHW')
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batch_size, shuffle=False, collate_fn=custom_collate)
 
     print(f"Total number of train samples: {len(train_dataset)}")

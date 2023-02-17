@@ -9,6 +9,7 @@ import numpy as np
 from torch.autograd import Variable
 from dataloaders import load_dataset, Datasets
 from my_models import ModalitySpecificTransformer
+from datetime import datetime
 from model_summary import summary
 
 device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
@@ -32,11 +33,20 @@ class Manager(object):
 
         with torch.no_grad():
             # TODO: Add audio
+            # for video, audio, label in tqdm(self.test_loader, desc='Eval'):
             for video, label in tqdm(self.test_loader, desc='Eval'):
-                batch = video.to(device)
+                video = video.to(device)
+                # audio = audio.to(device)
                 label = label.to(device)
 
-                output = self.model(batch)
+                # print("Eval:", audio.shape, video.shape, label)
+
+                start_time = datetime.now()
+                output = self.model(video)
+                diff = datetime.now() - start_time
+                print("Eval Forward calculation per batch Took time(s):", diff.total_seconds())
+
+                # print(output.shape)
                 loss = self.criterion(output, label)
                 ts_running_loss += loss.item()
 
@@ -48,37 +58,51 @@ class Manager(object):
                 error_meter.add(output.data, label)
 
                 # Detaching values
-                batch.detach()
+                video.detach()
+                # audio.detach()
                 label.detach()
                 output.detach()
 
         errors = error_meter.value()
-        print('Error: ' + ', '.join('@%s=%.2f' %
-                                    t for t in zip(topk, errors)))
-
+        accuracy = [100-k for k in errors]
+        print('Test Error: ' + ', '.join('@%s=%.2f' % t for t in zip(topk, errors)))
+        print('Test Accuracy: ' + ', '.join('@%s=%.2f' % t for t in zip(topk, accuracy)))
         ts_final_loss = ts_running_loss / len(self.test_loader)
 
         return ts_final_loss, errors
 
-    def do_batch(self, optimizer, batch, label):
-        batch = batch.to(device)
+    # def do_batch(self, optimizer, video, audio, label):
+    def do_batch(self, optimizer, video, label):
+        video = video.to(device)
+        # audio = audio.to(device)
         label = label.to(device)
-        batch = Variable(batch)
+        video = Variable(video)
+        # audio = Variable(audio)
         label = Variable(label)
 
         optimizer.zero_grad()
 
         # Do forward-backward.
-        output = self.model(batch)
+        # print(audio.shape)
+        start_time = datetime.now()
+        output = self.model(video)
+        diff = datetime.now() - start_time
+        print("Train Forward calculation per batch Took time(s):", diff.total_seconds())
         loss = self.criterion(output, label)
+
+        start_time = datetime.now()
         loss.backward()
+        diff = datetime.now() - start_time
+        print("Train Backward calculation per batch Took time(s):", diff.total_seconds())
 
         # Detaching values
         loss.detach()
-        batch.detach()
+        video.detach()
+        # audio.detach()
         label.detach()
         output.detach()
-        del batch
+        del video
+        # del audio
         del label
         del output
 
@@ -87,8 +111,10 @@ class Manager(object):
 
     def do_epoch(self, epoch_idx, optimizer):
         tr_running_loss = 0
-        for batch, label in tqdm(self.train_loader, desc='Epoch: %d ' % epoch_idx):
-            loss = self.do_batch(optimizer, batch, label)
+        # for video, audio, label in tqdm(self.train_loader, desc='Epoch: %d ' % epoch_idx):
+        for video, label in tqdm(self.train_loader, desc='Epoch: %d ' % epoch_idx):
+            loss = self.do_batch(optimizer, video, label)
+            # loss = self.do_batch(optimizer, video, audio, label)
             tr_running_loss += loss
             del loss
 
@@ -107,7 +133,7 @@ class Manager(object):
         # Save to file.
         torch.save(ckpt, savename)
 
-    def train(self, epochs, optimizer, scheduler, save=True, savename='', best_accuracy=0):
+    def train(self, epochs, optimizer, scheduler, save=True, savename='', best_accuracy=[0, 0]):
         best_accuracy = best_accuracy
         error_history = []
 
@@ -129,26 +155,28 @@ class Manager(object):
                 sch.step()
             ts_loss, errors = self.eval()
             error_history.append(errors)
-            accuracy = 100 - errors[0]  # Top-1 accuracy.
+            accuracy = [100-k for k in errors]
 
             wandb.log({
                 "epoch": epoch_idx,
                 "train loss": tr_loss,
-                "test loss": ts_loss,
-                "accuracy": accuracy,
+                "train accuracy": 1.0 - tr_loss,
+                "test loss": 1 - (accuracy[0] / 100.0),
+                "test accuracy": accuracy[0] / 100.0,
             })
 
             with open(savename + '.json', 'w') as fout:
                 json.dump({
                     'error_history': error_history,
                     'training_loss': tr_loss,
-                    'test_loss': ts_loss,
-                    'accuracy': accuracy,
+                    'training_accuracy': 1.0 - tr_loss,
+                    'test_loss': 1 - (accuracy[0] / 100.0),
+                    'test_accuracy': accuracy[0] / 100.0,
                 }, fout)
 
             # Save best model, if required.
-            if save and accuracy > best_accuracy:
-                print('Best model so far, Accuracy: %0.2f%% -> %0.2f%%' % (best_accuracy, accuracy))
+            if save and accuracy[0] > best_accuracy[0]:
+                print('Best model so far, Accuracy: %0.2f%% -> %0.2f%%' % (best_accuracy[0], accuracy[0]))
                 best_accuracy = accuracy
                 self.save_model(epoch_idx, best_accuracy, errors, savename)
 
@@ -161,7 +189,9 @@ class Manager(object):
                 # print("First mask:", self.model.module.layer1[0].mask1.mask.data)
 
         print('Finished finetuning...')
-        print('Best error/accuracy: %0.2f%%, %0.2f%%' % (100 - best_accuracy, best_accuracy))
+        print('Best error/accurac (Top-1): %0.2f%%, %0.2f%%' % (100 - best_accuracy[0], best_accuracy[0]))
+        if len(best_accuracy) > 0:
+            print('Best error/accuracy (Top-5): %0.2f%%, %0.2f%%' % (100 - best_accuracy[1], best_accuracy[1]))
         print('-' * 16)
 
 
@@ -229,13 +259,13 @@ def main():
     wandb.init(project="MTL-with-Transformer", entity="kaykobad", name=wandb_name)
     print('number of output layer and dataset: ', num_outputs, dataset)
 
-    model = ModalitySpecificTransformer(batch_dim=(batch_size, frame_per_clip, 3, 224, 224))
+    model = ModalitySpecificTransformer(num_classes=num_outputs, batch_dim=(batch_size, frame_per_clip, 3, 224, 224))
     model = nn.DataParallel(model)
     model = model.to(device)
 
     for name, param in model.named_parameters():
         # print(name, name.split("."), "classification_head" not in name, "classification_head" not in name.split("."))
-        if ('classification_head' not in name) and ('video_embedding' not in name):
+        if ('classification_head' not in name) and ('video_embedding' not in name) and ('patch_embeddings' not in name): # and ('layernorm' not in name):
             param.requires_grad = False
         else:
             param.requires_grad = True
@@ -262,7 +292,7 @@ def main():
     # print(model)
 
     manager = Manager(model)
-    manager.train(finetune_epochs, optimizers, schedulers, save=True, savename=save_name)
+    # manager.train(finetune_epochs, optimizers, schedulers, save=True, savename=save_name)
 
     # test_dataset, test_dataloader = load_dataset(Datasets.ucf101)
     # v, a, l = next(iter(test_dataloader))
@@ -298,19 +328,19 @@ if __name__ == '__main__':
     gc.collect()
 
     NUM_OUTPUTS = {
-        "ucf101": 101,
+        "ucf101": 2,
         "hmdb51": 51,
     }
 
     frame_per_clip = 8
-    dataset = 'hmdb51'
-    checkpoint_suffix = '_fc'
+    dataset = 'ucf101'
+    checkpoint_suffix = '_fc-bn-2-class-time'
     batch_size = 4
     lr = 5e-3
-    finetune_epochs = 2
+    finetune_epochs = 10
     save_name = 'checkpoints/' + dataset + checkpoint_suffix + '.pth'
     num_outputs = NUM_OUTPUTS[dataset]
-    wandb_name = 'HMDB51-FC'
+    wandb_name = 'single-split-no-aug'
 
     # Setting the seed
     torch.manual_seed(0)

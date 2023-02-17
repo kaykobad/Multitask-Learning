@@ -2,8 +2,10 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
-from transformers import ViTModel, ASTModel
+from transformers import ViTModel, ASTModel, ASTFeatureExtractor, AutoProcessor
 from einops import rearrange, repeat
+from torchaudio.transforms import Spectrogram
+from datetime import datetime
 
 
 class FusionMethod:
@@ -88,6 +90,51 @@ class PatchEmbed(nn.Module):
         return x
 
 
+# class AudioEmbed(nn.Module):
+#     """Audio to Patch Embedding.
+#
+#     Args:
+#         batch_dim (tuple): Dimension of the batch.
+#         patch_size (int): Size of one patch.
+#         tube_size (int): Size of temporal field of one 3D patch.
+#         in_channels (int): Channel num of input features. Defaults to 3.
+#         embed_dims (int): Dimensions of embedding. Defaults to 768.
+#         conv_type (str): Type for convolution layer. Defaults to 'Conv2d'.
+#     """
+#
+#     def __init__(self, patch_size=16, embed_dims=768):
+#         super(AudioEmbed, self).__init__()
+#         # Convert to Spectrogram
+#         self.spectrogram = Spectrogram()
+#         # add class token
+#         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dims))
+#         # Add positional embedding
+#         self.pos_embed = nn.Parameter(torch.zeros(1, self.num_patches, embed_dims))
+#
+#         self.init_weights()
+#
+#     def init_weights(self):
+#         # if hasattr(module, 'weight') and module.weight is not None:
+#         #     kaiming_init_(module.weight, mode='fan_in', nonlinearity='relu')
+#         # if hasattr(module, 'bias') and module.bias is not None:
+#         #     constant_init_(module.bias, constant_value=0)
+#         nn.init.trunc_normal_(self.pos_embed, std=.02)
+#         nn.init.trunc_normal_(self.cls_token, std=.02)
+#
+#     def forward(self, x):
+#         x = self.spectrogram(x)
+#         print("spec", x.shape)
+#
+#         # Add class token and pos embedding
+#         cls_tokens = repeat(self.cls_token, 'b ... -> (repeat b) ...', repeat=x.shape[0])
+#         x = x + self.pos_embed
+#         x = torch.cat((cls_tokens, x), dim=1)
+#
+#         print("Embedding shape:", x.shape)
+#
+#         return x
+
+
 class FusionLayer(nn.Module):
     def __int__(self, method):
         super(FusionLayer, self).__init__()
@@ -108,7 +155,7 @@ class CommonSpaceProjectionLayer(nn.Module):
 
 class ClassificationHead(torch.nn.Module):
 
-    def __init__(self, input_dim= 768, num_classes=101):
+    def __init__(self, input_dim=768, num_classes=101):
         super(ClassificationHead, self).__init__()
         self.linear = nn.Linear(in_features=input_dim, out_features=num_classes)
 
@@ -120,23 +167,45 @@ class ModalitySpecificTransformer(torch.nn.Module):
 
     def __init__(self, num_classes=101, batch_dim=(128, 8, 3, 224, 224), patch_size=16, in_channel=3, d_model=768):
         super(ModalitySpecificTransformer, self).__init__()
-
+        vit = ViTModel.from_pretrained('google/vit-base-patch16-224-in21k')
         self.video_embedding = PatchEmbed(batch_dim=batch_dim, patch_size=patch_size, in_channels=in_channel, embed_dims=d_model)
-        self.vit_encoder = ViTModel.from_pretrained('google/vit-base-patch16-224-in21k')
+        self.vit_encoder = vit.encoder
+        self.layernorm = vit.layernorm
+        self.pooler = vit.pooler
+
+        # self.audio_embedding = ASTFeatureExtractor.from_pretrained("MIT/ast-finetuned-audioset-10-10-0.4593")
+        # self.audio_embedding = AudioEmbed()
         # self.ast_encoder = ASTModel.from_pretrained("MIT/ast-finetuned-audioset-10-10-0.4593")
         # self.fusion = FusionLayer()
 
         # TODO: Implement Later
         # self.projection = CommonSpaceProjectionLayer()
-        self.classification_head = ClassificationHead()
+        self.classification_head = ClassificationHead(num_classes=num_classes)
 
     def forward(self, v):
+        start_time = datetime.now()
         v = self.video_embedding(v)
-        v = self.vit_encoder.encoder(v)
-        sequence_output = v[0]
-        sequence_output = self.vit_encoder.layernorm(sequence_output)
-        pooled_output = self.vit_encoder.pooler(sequence_output)
+        diff = datetime.now() - start_time
+        print("\nEmbedding shape:", v.shape, "Took time(s):", diff.total_seconds())
+        start_time = datetime.now()
+        v = self.vit_encoder(v)
+        # sequence_output = v[0]
+        sequence_output = self.layernorm(v[0])
+        pooled_output = self.pooler(sequence_output)
+        diff = datetime.now() - start_time
+        print("Encoder output shape:", pooled_output.shape, "Took time(s):", diff.total_seconds())
+        # print("M1:", a.shape)
+        # a = rearrange(a, 'b c n -> n c b')
+        # print("M1/2:", a.shape)
+
+        # a = self.audio_embedding(a.cpu(), return_tensors="pt")
+        # print("M2:", a.shape)
+        # a_out = self.ast_encoder(a)
+        # print("M3:", a_out.shape)
+        start_time = datetime.now()
         out = self.classification_head(pooled_output)
+        diff = datetime.now() - start_time
+        print("Final output shape:", out.shape, "Took time(s):", diff.total_seconds())
 
         # return {
         #     # "audio_feature": out_audio,
