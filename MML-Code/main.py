@@ -7,10 +7,10 @@ import torchnet as tnt
 from torch import nn
 import numpy as np
 from torch.autograd import Variable
-from dataloaders import load_dataset, Datasets
+from dataloaders import load_dataset, Datasets, load_kinetics_dataset
 from my_models import ModalitySpecificTransformer
 from datetime import datetime
-from model_summary import summary
+# from model_summary import summary
 
 device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 print("Device:", device)
@@ -21,7 +21,8 @@ class Manager(object):
         self.model = mm_model
         self.batch_size = batch_size
 
-        self.train_dataset, self.train_loader, self.test_dataset, self.test_loader = load_dataset(dataset, batch_size=batch_size, frame_per_clip=frame_per_clip)
+        # self.train_dataset, self.train_loader, self.test_dataset, self.test_loader = load_dataset(dataset, batch_size=batch_size, frame_per_clip=frame_per_clip)
+        self.train_dataset, self.train_loader, self.test_dataset, self.test_loader = load_kinetics_dataset(batch_size=batch_size, frame_per_clip=frame_per_clip, audio_sampling_rate=audio_sampling_rate)
         self.criterion = nn.CrossEntropyLoss()
 
     def eval(self):
@@ -292,7 +293,7 @@ def main():
     # print(model)
 
     manager = Manager(model)
-    # manager.train(finetune_epochs, optimizers, schedulers, save=True, savename=save_name)
+    manager.train(finetune_epochs, optimizers, schedulers, save=True, savename=save_name)
 
     # test_dataset, test_dataloader = load_dataset(Datasets.ucf101)
     # v, a, l = next(iter(test_dataloader))
@@ -330,17 +331,19 @@ if __name__ == '__main__':
     NUM_OUTPUTS = {
         "ucf101": 2,
         "hmdb51": 51,
+        "kinetics400": 3,
     }
 
     frame_per_clip = 8
-    dataset = 'ucf101'
+    audio_sampling_rate = 16000
+    dataset = 'kinetics400'
     checkpoint_suffix = '_fc-bn-2-class-time'
     batch_size = 4
     lr = 5e-3
     finetune_epochs = 10
     save_name = 'checkpoints/' + dataset + checkpoint_suffix + '.pth'
     num_outputs = NUM_OUTPUTS[dataset]
-    wandb_name = 'single-split-no-aug'
+    wandb_name = 'garbage'
 
     # Setting the seed
     torch.manual_seed(0)

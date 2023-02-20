@@ -62,3 +62,7 @@ wandb==0.13.9
 websocket-client==1.5.0
 xxhash==3.2.0
 yarl==1.8.2
+imageio==2.25.1
+imageio-ffmpeg==0.4.8
+moviepy==1.0.3
+pydub==0.25.1
