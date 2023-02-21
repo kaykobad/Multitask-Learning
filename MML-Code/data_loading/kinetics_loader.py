@@ -3,7 +3,9 @@ import torchvision.transforms as transforms
 from torch.utils.data import Dataset
 import os
 import moviepy.editor as mp
-import pydub
+import numpy as np
+from PIL import Image
+# import pydub
 
 
 class KineticsDataset(Dataset):
@@ -40,20 +42,28 @@ class KineticsDataset(Dataset):
         n_frames = self.num_frames
         duration = video.duration
         frame_times = [t * duration / (n_frames + 1) for t in range(1, n_frames + 1)]
-        frames = [video.get_frame(t) for t in frame_times]
+
+        # transform = transforms.Compose([
+        #     transforms.ToTensor(),
+        # ])
+
+        frames = torch.from_numpy(np.asarray([video.get_frame(t) for t in frame_times], dtype=np.float32))
+        # frames = torch.stack([video.get_frame(t) for t in frame_times])
+        # print(frames.shape, type(frames))
 
         # Extract the audio and convert it to mono channel
-        audio = pydub.AudioSegment.from_file(video_path, frame_rate=self.audio_sampling_rate).set_channels(1)
-        audio = torch.FloatTensor(audio.get_array_of_samples())
+        # audio = pydub.AudioSegment.from_file(video_path, frame_rate=self.audio_sampling_rate).set_channels(1)
+        # audio = torch.FloatTensor(audio.get_array_of_samples())
 
         # Apply Transforms
         video = frames
         if self.video_transforms is not None:
             video = self.video_transforms(video)
-        if self.audio_transforms is not None:
-            audio = self.audio_transforms(audio)
+        # if self.audio_transforms is not None:
+        #     audio = self.audio_transforms(audio)
 
-        return video, audio, label
+        # return video, audio, label
+        return video, label
 
     def _get_annotations(self):
         annotations_map = {}
@@ -72,7 +82,7 @@ class KineticsDataset(Dataset):
                 for filename in os.listdir(subdir_path):
                     if filename.endswith('.mp4'):
                         video_path = os.path.join(subdir_path, filename)
-                        label = self.annotations[subdir]
+                        label = int(self.annotations[subdir])
                         video_files.append((video_path, label))
         return video_files
 

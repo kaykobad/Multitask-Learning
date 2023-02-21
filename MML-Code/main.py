@@ -191,7 +191,7 @@ class Manager(object):
 
         print('Finished finetuning...')
         print('Best error/accurac (Top-1): %0.2f%%, %0.2f%%' % (100 - best_accuracy[0], best_accuracy[0]))
-        if len(best_accuracy) > 0:
+        if len(best_accuracy) > 1:
             print('Best error/accuracy (Top-5): %0.2f%%, %0.2f%%' % (100 - best_accuracy[1], best_accuracy[1]))
         print('-' * 16)
 
@@ -266,7 +266,10 @@ def main():
 
     for name, param in model.named_parameters():
         # print(name, name.split("."), "classification_head" not in name, "classification_head" not in name.split("."))
-        if ('classification_head' not in name) and ('video_embedding' not in name) and ('patch_embeddings' not in name): # and ('layernorm' not in name):
+        if optimize_ln and ('layernorm' in name):
+            param.requires_grad = True
+            print(name, "Not freezed")
+        elif ('classification_head' not in name) and ('video_embedding' not in name) and ('patch_embeddings' not in name): # and ('layernorm' not in name):
             param.requires_grad = False
         else:
             param.requires_grad = True
@@ -334,16 +337,17 @@ if __name__ == '__main__':
         "kinetics400": 3,
     }
 
+    optimize_ln = True
     frame_per_clip = 8
     audio_sampling_rate = 16000
     dataset = 'kinetics400'
-    checkpoint_suffix = '_fc-bn-2-class-time'
+    checkpoint_suffix = '_fc-3-class-time'
     batch_size = 4
     lr = 5e-3
-    finetune_epochs = 10
+    finetune_epochs = 20
     save_name = 'checkpoints/' + dataset + checkpoint_suffix + '.pth'
     num_outputs = NUM_OUTPUTS[dataset]
-    wandb_name = 'garbage'
+    wandb_name = 'Kinetics-400-3-class-fc-ln'
 
     # Setting the seed
     torch.manual_seed(0)
