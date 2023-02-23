@@ -34,16 +34,16 @@ class Manager(object):
 
         with torch.no_grad():
             # TODO: Add audio
-            # for video, audio, label in tqdm(self.test_loader, desc='Eval'):
-            for video, label in tqdm(self.test_loader, desc='Eval'):
+            for video, audio, label in tqdm(self.test_loader, desc='Eval'):
+                # for video, label in tqdm(self.test_loader, desc='Eval'):
                 video = video.to(device)
-                # audio = audio.to(device)
+                audio = audio.to(device)
                 label = label.to(device)
 
-                # print("Eval:", audio.shape, video.shape, label)
+                print("Eval:", audio.shape, video.shape, label)
 
                 start_time = datetime.now()
-                output = self.model(video)
+                output = self.model(video, audio)
                 diff = datetime.now() - start_time
                 print("Eval Forward calculation per batch Took time(s):", diff.total_seconds())
 
@@ -60,7 +60,7 @@ class Manager(object):
 
                 # Detaching values
                 video.detach()
-                # audio.detach()
+                audio.detach()
                 label.detach()
                 output.detach()
 
@@ -73,12 +73,12 @@ class Manager(object):
         return ts_final_loss, errors
 
     # def do_batch(self, optimizer, video, audio, label):
-    def do_batch(self, optimizer, video, label):
+    def do_batch(self, optimizer, video, audio, label):
         video = video.to(device)
-        # audio = audio.to(device)
+        audio = audio.to(device)
         label = label.to(device)
         video = Variable(video)
-        # audio = Variable(audio)
+        audio = Variable(audio)
         label = Variable(label)
 
         optimizer.zero_grad()
@@ -86,7 +86,7 @@ class Manager(object):
         # Do forward-backward.
         # print(audio.shape)
         start_time = datetime.now()
-        output = self.model(video)
+        output = self.model(video, audio)
         diff = datetime.now() - start_time
         print("Train Forward calculation per batch Took time(s):", diff.total_seconds())
         loss = self.criterion(output, label)
@@ -95,15 +95,16 @@ class Manager(object):
         loss.backward()
         diff = datetime.now() - start_time
         print("Train Backward calculation per batch Took time(s):", diff.total_seconds())
+        # print(self.model.classification_head.linear.weight)
 
         # Detaching values
         loss.detach()
         video.detach()
-        # audio.detach()
+        audio.detach()
         label.detach()
         output.detach()
         del video
-        # del audio
+        del audio
         del label
         del output
 
@@ -112,10 +113,10 @@ class Manager(object):
 
     def do_epoch(self, epoch_idx, optimizer):
         tr_running_loss = 0
-        # for video, audio, label in tqdm(self.train_loader, desc='Epoch: %d ' % epoch_idx):
-        for video, label in tqdm(self.train_loader, desc='Epoch: %d ' % epoch_idx):
-            loss = self.do_batch(optimizer, video, label)
-            # loss = self.do_batch(optimizer, video, audio, label)
+        for video, audio, label in tqdm(self.train_loader, desc='Epoch: %d ' % epoch_idx):
+            # for video, label in tqdm(self.train_loader, desc='Epoch: %d ' % epoch_idx):
+            # loss = self.do_batch(optimizer, video, label)
+            loss = self.do_batch(optimizer, video, audio, label)
             tr_running_loss += loss
             del loss
 
@@ -161,8 +162,8 @@ class Manager(object):
             wandb.log({
                 "epoch": epoch_idx,
                 "train loss": tr_loss,
-                "train accuracy": 1.0 - tr_loss,
-                "test loss": 1 - (accuracy[0] / 100.0),
+                # "train accuracy": 1.0 - tr_loss,
+                "test error": 1 - (accuracy[0] / 100.0),
                 "test accuracy": accuracy[0] / 100.0,
             })
 
@@ -170,8 +171,8 @@ class Manager(object):
                 json.dump({
                     'error_history': error_history,
                     'training_loss': tr_loss,
-                    'training_accuracy': 1.0 - tr_loss,
-                    'test_loss': 1 - (accuracy[0] / 100.0),
+                    # 'training_accuracy': 1.0 - tr_loss,
+                    'test_error': 1 - (accuracy[0] / 100.0),
                     'test_accuracy': accuracy[0] / 100.0,
                 }, fout)
 
@@ -260,7 +261,7 @@ def main():
     wandb.init(project="MTL-with-Transformer", entity="kaykobad", name=wandb_name)
     print('number of output layer and dataset: ', num_outputs, dataset)
 
-    model = ModalitySpecificTransformer(num_classes=num_outputs, batch_dim=(batch_size, frame_per_clip, 3, 224, 224))
+    model = ModalitySpecificTransformer(num_classes=num_outputs, batch_dim=(batch_size, frame_per_clip, 3, 224, 224), audio_info=(audio_sampling_rate, audio_duration))
     model = nn.DataParallel(model)
     model = model.to(device)
 
@@ -337,17 +338,19 @@ if __name__ == '__main__':
         "kinetics400": 3,
     }
 
-    optimize_ln = True
-    frame_per_clip = 8
-    audio_sampling_rate = 16000
+    optimize_ln = False
+    # modalities = [False, True]
+    frame_per_clip = 8           # 4, 8, 16, 32
+    audio_sampling_rate = 16000  # 16000, 44100, 48000
+    audio_duration = 10
     dataset = 'kinetics400'
     checkpoint_suffix = '_fc-3-class-time'
     batch_size = 4
     lr = 5e-3
-    finetune_epochs = 20
+    finetune_epochs = 30
     save_name = 'checkpoints/' + dataset + checkpoint_suffix + '.pth'
     num_outputs = NUM_OUTPUTS[dataset]
-    wandb_name = 'Kinetics-400-3-class-fc-ln'
+    wandb_name = 'Kinetics-3C-A-fc16k-30'
 
     # Setting the seed
     torch.manual_seed(0)

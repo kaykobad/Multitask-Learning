@@ -4,8 +4,8 @@ from torch.utils.data import Dataset
 import os
 import moviepy.editor as mp
 import numpy as np
-from PIL import Image
-# import pydub
+import pydub
+import torch.nn.functional as F
 
 
 class KineticsDataset(Dataset):
@@ -17,12 +17,15 @@ class KineticsDataset(Dataset):
             audio_transforms=None,
             frames_per_clip=16,
             audio_sampling_rate=16000,
+            audio_duration=10,
             is_train=False):
         self.root_dir = os.path.join(root_dir, "train" if is_train else "test")
         self.num_frames = frames_per_clip
         self.video_transforms = video_transforms
         self.audio_transforms = audio_transforms
+        self.audio_duration = audio_duration
         self.audio_sampling_rate = audio_sampling_rate
+        self.n_audio_samples = self.audio_duration * self.audio_sampling_rate
         self.annotations_path = annotations_path
         self.annotations = self._get_annotations()
         self.video_files = self._get_video_files()  # File path and label
@@ -52,18 +55,22 @@ class KineticsDataset(Dataset):
         # print(frames.shape, type(frames))
 
         # Extract the audio and convert it to mono channel
-        # audio = pydub.AudioSegment.from_file(video_path, frame_rate=self.audio_sampling_rate).set_channels(1)
-        # audio = torch.FloatTensor(audio.get_array_of_samples())
+        audio = pydub.AudioSegment.from_file(video_path).set_channels(1).set_frame_rate(self.audio_sampling_rate)
+        audio = torch.FloatTensor(audio.get_array_of_samples())
+        if audio.shape[0] >= self.n_audio_samples:
+            audio = audio[:self.n_audio_samples]
+        else:
+            audio = F.pad(input=audio, pad=(0, self.n_audio_samples - audio.shape[0]), mode='constant', value=0)
 
         # Apply Transforms
         video = frames
         if self.video_transforms is not None:
             video = self.video_transforms(video)
-        # if self.audio_transforms is not None:
-        #     audio = self.audio_transforms(audio)
+        if self.audio_transforms is not None:
+            audio = self.audio_transforms(audio)
 
         # return video, audio, label
-        return video, label
+        return video, audio, label
 
     def _get_annotations(self):
         annotations_map = {}
@@ -97,7 +104,7 @@ class KineticsDataset(Dataset):
 # import torchvision.transforms as transforms
 #
 # # Define the input video file path
-# video_file_path = "./test2.mp4"
+# video_file_path = "./test.mp4"
 #
 # # Load the video file
 # video = mp.VideoFileClip(video_file_path)
@@ -110,8 +117,15 @@ class KineticsDataset(Dataset):
 # frames = [video.get_frame(t) for t in frame_times]
 #
 # # Extract the audio and convert it to mono channel
-# audio = pydub.AudioSegment.from_file(video_file_path, frame_rate=44100).set_channels(1)
+# audio = pydub.AudioSegment.from_file(video_file_path).set_channels(1).set_frame_rate(16000)
+# print("Frame width:", audio.frame_rate, "Frame rate:", audio.frame_width, "Channel:", audio.channels, "Duration:", audio.duration_seconds)
 # audio = torch.FloatTensor(audio.get_array_of_samples())
+#
+# num_samples = 10*16000
+# if audio.shape[0] >= num_samples:
+#     audio = audio[:num_samples]
+# else:
+#     audio = F.pad(input=audio, pad=(0, num_samples-audio.shape[0]), mode='constant', value=0)
 #
 # # Convert the frames and audio to PyTorch tensors
 # transform = transforms.Compose([
@@ -122,4 +136,4 @@ class KineticsDataset(Dataset):
 #
 # # Print the shapes of the tensors
 # print(frames.shape)
-# print(audio.shape)
+# print("Shape:", audio.shape, audio)
