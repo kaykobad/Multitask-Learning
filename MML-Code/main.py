@@ -13,7 +13,7 @@ from datetime import datetime
 # from model_summary import summary
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-print("Device:", device)
+print("Device:", device, torch.cuda.device_count())
 
 
 class Manager(object):
