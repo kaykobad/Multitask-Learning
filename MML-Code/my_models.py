@@ -8,7 +8,7 @@ from torchaudio.transforms import Spectrogram
 from datetime import datetime
 
 
-device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 
 class FusionMethod:

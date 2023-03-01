@@ -12,7 +12,7 @@ from my_models import ModalitySpecificTransformer
 from datetime import datetime
 # from model_summary import summary
 
-device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 print("Device:", device)
 
 
