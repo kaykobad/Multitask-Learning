@@ -340,12 +340,12 @@ if __name__ == '__main__':
 
     optimize_ln = False
     # modalities = [False, True]
-    frame_per_clip = 8           # 4, 8, 16, 32
+    frame_per_clip = 32           # 4, 8, 16, 32
     audio_sampling_rate = 16000  # 16000, 44100, 48000
     audio_duration = 10
     dataset = 'kinetics400'
     checkpoint_suffix = '_fc-3-class-time'
-    batch_size = 4
+    batch_size = 64
     lr = 5e-3
     finetune_epochs = 30
     save_name = 'checkpoints/' + dataset + checkpoint_suffix + '.pth'

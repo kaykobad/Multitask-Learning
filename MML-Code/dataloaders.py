@@ -26,8 +26,8 @@ data_config = {
         "dataset": HMDB51
     },
     "kinetics400": {
-        "dir": "datasets/data/kinetics-400",
-        "annotation": "datasets/data/kinetics-400/annotations.txt",
+        "dir": "test-dataset/kinetics-400",
+        "annotation": "test-dataset/kinetics-400/annotations.txt",
         "dataset": KineticsDataset
     }
 }

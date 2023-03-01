@@ -1,0 +1,3 @@
+windsurfing 0
+yoga 1
+zumba 2

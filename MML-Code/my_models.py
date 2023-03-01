@@ -151,12 +151,11 @@ class ModalitySpecificTransformer(torch.nn.Module):
         super(ModalitySpecificTransformer, self).__init__()
         self.audio_sampling_rate, self.audio_duration = audio_info
 
-        # TODO: Uncomment for video
-        # vit = ViTModel.from_pretrained('google/vit-base-patch16-224-in21k')
-        # self.video_embedding = PatchEmbed(batch_dim=batch_dim, patch_size=patch_size, in_channels=in_channel, embed_dims=d_model)
-        # self.vit_encoder = vit.encoder
-        # self.layernorm = vit.layernorm
-        # self.pooler = vit.pooler
+        vit = ViTModel.from_pretrained('google/vit-base-patch16-224-in21k')
+        self.video_embedding = PatchEmbed(batch_dim=batch_dim, patch_size=patch_size, in_channels=in_channel, embed_dims=d_model)
+        self.vit_encoder = vit.encoder
+        self.layernorm = vit.layernorm
+        self.pooler = vit.pooler
 
         self.audio_feature_extractor = AudioFeatureExtraction(sampling_rate=self.audio_sampling_rate)
         # self.audio_feature_extractor = ASTFeatureExtractor.from_pretrained("MIT/ast-finetuned-audioset-10-10-0.4593")
@@ -166,33 +165,28 @@ class ModalitySpecificTransformer(torch.nn.Module):
 
         # TODO: Implement Later
         # self.projection = CommonSpaceProjectionLayer()
-        self.classification_head = ClassificationHead(num_classes=num_classes)
+        self.classification_head = ClassificationHead(input_dim=2*768, num_classes=num_classes)
 
     def forward(self, v, a):
-        # TODO: Uncomment for video
-        # start_time = datetime.now()
-        # v = self.video_embedding(v)
-        # diff = datetime.now() - start_time
-        # print("\nEmbedding shape:", v.shape, "Took time(s):", diff.total_seconds())
-        # start_time = datetime.now()
-        # v = self.vit_encoder(v)
-        # # sequence_output = v[0]
-        # sequence_output = self.layernorm(v[0])
-        # pooled_output = self.pooler(sequence_output)
-        # diff = datetime.now() - start_time
-        # print("Encoder output shape:", pooled_output.shape, "Took time(s):", diff.total_seconds())
-        # # print("M1:", a.shape)
-        # # a = rearrange(a, 'b c n -> n c b')
-        # # print("M1/2:", a.shape)
-        #
-        # # a = self.audio_embedding(a.cpu(), return_tensors="pt")
-        # # print("M2:", a.shape)
-        # # a_out = self.ast_encoder(a)
-        # # print("M3:", a_out.shape)
-        # start_time = datetime.now()
-        # out = self.classification_head(pooled_output)
-        # diff = datetime.now() - start_time
-        # print("Final output shape:", out.shape, "Took time(s):", diff.total_seconds())
+        start_time = datetime.now()
+        v = self.video_embedding(v)
+        diff = datetime.now() - start_time
+        print("\nVideo Embedding shape:", v.shape, "Took time(s):", diff.total_seconds())
+        start_time = datetime.now()
+        v = self.vit_encoder(v)
+        # sequence_output = v[0]
+        sequence_output = self.layernorm(v[0])
+        pooled_output_v = self.pooler(sequence_output)
+        diff = datetime.now() - start_time
+        print("ViT Encoder output shape:", pooled_output_v.shape, "Took time(s):", diff.total_seconds())
+        # print("M1:", a.shape)
+        # a = rearrange(a, 'b c n -> n c b')
+        # print("M1/2:", a.shape)
+
+        # a = self.audio_embedding(a.cpu(), return_tensors="pt")
+        # print("M2:", a.shape)
+        # a_out = self.ast_encoder(a)
+        # print("M3:", a_out.shape)
 
         # TODO: Audio
         start_time = datetime.now()
@@ -201,10 +195,12 @@ class ModalitySpecificTransformer(torch.nn.Module):
         print("\nSpectrogram shape:", a.shape, "Took time(s):", diff.total_seconds())
         start_time = datetime.now()
         a = self.ast_model(a)
-        pooled_output = a['pooler_output']
+        pooled_output_a = a['pooler_output']
         diff = datetime.now() - start_time
-        print("Encoder output shape:", pooled_output.shape, "Took time(s):", diff.total_seconds())
+        print("AST Encoder output shape:", pooled_output_a.shape, "Took time(s):", diff.total_seconds())
+
         start_time = datetime.now()
+        pooled_output = torch.cat((pooled_output_v, pooled_output_a), dim=1)
         out = self.classification_head(pooled_output)
         diff = datetime.now() - start_time
         print("Final output shape:", out.shape, "Took time(s):", diff.total_seconds())
