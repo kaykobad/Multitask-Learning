@@ -345,7 +345,7 @@ if __name__ == '__main__':
     audio_duration = 10
     dataset = 'kinetics400'
     checkpoint_suffix = '_fc-3-class-time'
-    batch_size = 256
+    batch_size = 128
     lr = 5e-3
     finetune_epochs = 30
     save_name = 'checkpoints/' + dataset + checkpoint_suffix + '.pth'
