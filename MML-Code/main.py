@@ -262,7 +262,7 @@ def main():
     print('number of output layer and dataset: ', num_outputs, dataset)
 
     model = ModalitySpecificTransformer(num_classes=num_outputs, batch_dim=(batch_size, frame_per_clip, 3, 224, 224), audio_info=(audio_sampling_rate, audio_duration))
-    model = nn.DataParallel(model)
+    model = nn.DataParallel(model, device_ids=[0, 1])
     model = model.to(device)
 
     for name, param in model.named_parameters():
