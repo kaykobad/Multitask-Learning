@@ -222,6 +222,7 @@ def train_model(train_data_path, validation_data_path):
         
         train_accuracy = 1.0 * correct / total
         validation_accuracy = eval_model(model, validation_data)
+        train_loss /= len(train_data)
 
         # Save best model
         if validation_accuracy > best_accuracy:
