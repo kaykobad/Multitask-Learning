@@ -20,15 +20,19 @@ print("Device:", device, torch.cuda.device_count())
 # Global Variables
 should_init_wandb = True
 enable_wandb_logging = True
-wandb_name = "EO-R50"
-model_name = "R50-EO"
+wandb_name = "SAR-R50"
+model_name = "SAR-R50"
 batch_size = 512
-data_folder = "dataset/train_processed/"
-EO_data_folder = data_folder + "EO/"
-SAR_data_folder = data_folder + "SAR/"
 random_state = 44
 random_seed = 0
 num_epoches = 30
+data_dir = "dataset/train-validation_processed/"
+train_dir = data_dir + "train/"
+validation_dir = data_dir + "validation/"
+train_EO_dir = train_dir + "EO/"
+train_SAR_dir = train_dir + "SAR/"
+validation_EO_dir = validation_dir + "EO/"
+validation_SAR_dir = validation_dir + "SAR/"
 
 # wandb init
 if should_init_wandb:
@@ -75,31 +79,39 @@ def log_wandb(wandb_data):
 #     return args
 
 
-# def load_train_data(train_data_path, batch_size):
-#     # Convert images to tensors, normalize, and resize them
-#     transform = transforms.Compose([
-#         transforms.Resize(224),
-#         transforms.ToTensor(),
-#         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-#     ])
+def load_train_data(data_path):
+    # Convert images to tensors, normalize, and resize them
+    transform = transforms.Compose([
+        transforms.Resize(224),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+    ])
 
-#     train_data = torchvision.datasets.ImageFolder(root=train_data_path, transform=transform)
-#     train_data_loader = data.DataLoader(train_data, batch_size=batch_size, shuffle=True, num_workers=args.num_workers)
+    train_data = torchvision.datasets.ImageFolder(root=data_path, transform=transform)
+    train_data_loader = data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
 
-#     return train_data_loader
+    # Print info
+    print(f"Total number of train samples: {len(train_data)}")
+    print(f"Total number of train batches: {len(train_data_loader)}")
+
+    return train_data_loader
 
 
-# def load_test_data(test_data_path, batch_size):
-#     transform = transforms.Compose([
-#         transforms.Resize(224),
-#         transforms.ToTensor(),
-#         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-#     ])
+def load_test_data(data_path):
+    transform = transforms.Compose([
+        transforms.Resize(224),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+    ])
 
-#     test_data = torchvision.datasets.ImageFolder(root=test_data_path, transform=transform)
-#     test_data_loader = data.DataLoader(test_data, batch_size=batch_size, shuffle=True, num_workers=args.num_workers)
+    test_data = torchvision.datasets.ImageFolder(root=data_path, transform=transform)
+    test_data_loader = data.DataLoader(test_data, batch_size=batch_size, shuffle=False)
 
-#     return test_data_loader
+    # Print info
+    print(f"Total number of train samples: {len(test_data)}")
+    print(f"Total number of train batches: {len(test_data_loader)}")
+
+    return test_data_loader
 
 
 def load_data(data_path):
@@ -159,9 +171,12 @@ def eval_model(model, validation_data):
 
 
 # My training function
-def train_model(data_path):
-    train_data, validation_data = load_data(data_path)
+def train_model(train_data_path, validation_data_path):
+    # train_data, validation_data = load_data(data_path)
     # train_losses = []
+
+    train_data = load_train_data(train_data_path)
+    validation_data = load_test_data(validation_data_path)
 
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -181,7 +196,7 @@ def train_model(data_path):
         correct = 0
         total = 0
         train_loss = 0
-        with tqdm(train_data, unit="batch", desc="Train Epoch {epoch}") as tepoch:
+        with tqdm(train_data, unit="batch", desc="Train Epoch " + str(epoch)) as tepoch:
             for inputs, labels in tepoch:
                 # tepoch.set_description(f"Epoch {epoch}")
                 # get the inputs
@@ -224,7 +239,7 @@ def train_model(data_path):
         log_wandb(log_data)
 
     print('Finished Training with best validation accuracy {best_accuracy}')
-    torch.save(best_model, 'check_points/{model_name}.pth')
+    torch.save(best_model, 'check_points/'+model_name+".pth")
 
 
 # def train():
@@ -302,4 +317,4 @@ if __name__ == "__main__":
     # else:
     #     train()
     # load_data(EO_data_folder)
-    train_model(EO_data_folder)
+    train_model(train_SAR_dir, validation_SAR_dir)
