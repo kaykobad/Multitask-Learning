@@ -10,7 +10,8 @@ import argparse
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 import numpy as np
-from models import ResNet18
+from models import ResNet18, MultiModalResNet18
+from custom_dataset import PbvsDataset
 
 
 # Device selection
@@ -21,10 +22,10 @@ print("Device:", device, torch.cuda.device_count())
 # Global Variables
 should_init_wandb = False
 enable_wandb_logging = True
-wandb_name = "SAR-R18"
-model_name = "SAR-R18"
+wandb_name = "EOSAR-R18-Add"
+model_name = "EOSAR-R18-Add"
 num_classes = 10
-batch_size = 512
+batch_size = 256
 random_state = 44
 random_seed = 0
 num_epoches = 60
@@ -81,7 +82,7 @@ def log_wandb(wandb_data):
 #     return args
 
 
-def load_train_data(data_path):
+def load_train_data(data_path, multimodal=False):
     # Convert images to tensors, normalize, and resize them
     transform = transforms.Compose([
         transforms.Resize(224),
@@ -89,7 +90,10 @@ def load_train_data(data_path):
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
 
-    train_data = torchvision.datasets.ImageFolder(root=data_path, transform=transform)
+    if multimodal:
+        train_data = PbvsDataset(root=data_path, transform=transform)
+    else:
+        train_data = torchvision.datasets.ImageFolder(root=data_path, transform=transform)
     train_data_loader = data.DataLoader(train_data, batch_size=batch_size, shuffle=True)
 
     # Print info
@@ -99,14 +103,17 @@ def load_train_data(data_path):
     return train_data_loader, train_data
 
 
-def load_test_data(data_path):
+def load_test_data(data_path, multimodal=False):
     transform = transforms.Compose([
         transforms.Resize(224),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
 
-    test_data = torchvision.datasets.ImageFolder(root=data_path, transform=transform)
+    if multimodal:
+        test_data = PbvsDataset(root=data_path, transform=transform)
+    else:
+        test_data = torchvision.datasets.ImageFolder(root=data_path, transform=transform)
     test_data_loader = data.DataLoader(test_data, batch_size=batch_size, shuffle=False)
 
     # Print info
@@ -174,32 +181,32 @@ def weighted_random_sampling(dataset, num_samples=5000):
     return dataloader
 
 
-def weighted_random_sampling2(dataset1, dataset2, num_samples=5000):
-    label_train1 = dataset1.targets
-    label_train2 = dataset2.targets
-    print(torch.equal(torch.as_tensor(label_train1), torch.as_tensor(label_train2)))
-    class_sample_count = np.array([len(np.where(label_train1 == t)[0]) for t in np.unique(label_train1)])
-    # print(class_sample_count)
-    # print(len(dataset), class_sample_count.sum())
-    weight = 1. / class_sample_count
-    # print(weight)
-    samples_weight = np.array([weight[t] for t in label_train1])
-    samples_weight = torch.from_numpy(samples_weight)
-    # print(len(samples_weight))
-    sampler = data.WeightedRandomSampler(weights=samples_weight, num_samples=num_samples, replacement=False)
-    dataloader1 = data.DataLoader(dataset1, sampler=sampler, batch_size=batch_size)
-    dataloader2 = data.DataLoader(dataset2, sampler=sampler, batch_size=batch_size)
+# def weighted_random_sampling2(dataset1, dataset2, num_samples=5000):
+#     label_train1 = dataset1.targets
+#     label_train2 = dataset2.targets
+#     print(torch.equal(torch.as_tensor(label_train1), torch.as_tensor(label_train2)))
+#     class_sample_count = np.array([len(np.where(label_train1 == t)[0]) for t in np.unique(label_train1)])
+#     # print(class_sample_count)
+#     # print(len(dataset), class_sample_count.sum())
+#     weight = 1. / class_sample_count
+#     # print(weight)
+#     samples_weight = np.array([weight[t] for t in label_train1])
+#     samples_weight = torch.from_numpy(samples_weight)
+#     # print(len(samples_weight))
+#     sampler = data.WeightedRandomSampler(weights=samples_weight, num_samples=num_samples, replacement=False)
+#     dataloader1 = data.DataLoader(dataset1, sampler=sampler, batch_size=batch_size)
+#     dataloader2 = data.DataLoader(dataset2, sampler=sampler, batch_size=batch_size)
 
-    for d1, d2 in zip(dataloader1, dataloader2):
-        # print(d1[1], d2[1])
-        print(torch.equal(torch.as_tensor(d1[1]), torch.as_tensor(d2[1])))
-    # print(len(dataloader))
-    # x = torch.zeros(10)
-    # for i, l in dataloader:
-    #     x += l.unique(return_counts=True)[1]
-    #     print(l.unique(return_counts=True))
-    # print(x)
-    return dataloader1, dataloader2
+#     for d1, d2 in zip(dataloader1, dataloader2):
+#         # print(d1[1], d2[1])
+#         print(torch.equal(torch.as_tensor(d1[1]), torch.as_tensor(d2[1])))
+#     # print(len(dataloader))
+#     # x = torch.zeros(10)
+#     # for i, l in dataloader:
+#     #     x += l.unique(return_counts=True)[1]
+#     #     print(l.unique(return_counts=True))
+#     # print(x)
+#     return dataloader1, dataloader2
 
 
 # My evaluation function
@@ -222,19 +229,18 @@ def eval_model(model, validation_data):
 
 
 # My training function
-def train_model(train_data_path, validation_data_path, modality=1):
+def train_model(train_data_path, validation_data_path):
     # train_data, validation_data = load_data(data_path)
     # train_losses = []
 
-    if modality == 1:
-        train_dataloader, train_dataset = load_train_data(train_data_path)
-        validation_dataloader, validation_dataset = load_test_data(validation_data_path)
-        model = ResNet18(pretrained=False, num_classes=10)
+    train_dataloader, train_dataset = load_train_data(train_data_path)
+    validation_dataloader, validation_dataset = load_test_data(validation_data_path)
+    model = ResNet18(pretrained=False, num_classes=10)
 
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # model = models.resnet50(pretrained=False)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.model1.fc.parameters(), lr=0.003)
+    optimizer = optim.Adam(model.parameters(), lr=0.003)
     model = nn.DataParallel(model)
     model.to(device)
     print(model)
@@ -278,6 +284,107 @@ def train_model(train_data_path, validation_data_path, modality=1):
         train_accuracy = 1.0 * correct / total
         validation_accuracy = eval_model(model, validation_dataloader)
         train_loss /= len(train_dataloader)
+
+        # Save best model
+        if validation_accuracy > best_accuracy:
+            best_accuracy = validation_accuracy
+            best_model = model
+
+        log_data = {
+            "Epoch": epoch,
+            "Train Loss": train_loss,
+            "Train Accuracy": train_accuracy,
+            "Train Error": 1.0 - train_accuracy,
+            "Validation Accuracy": validation_accuracy,
+            "Validation Error": 1.0 - validation_accuracy,
+        }
+        log_wandb(log_data)
+
+    print('Finished Training with best validation accuracy ' + str(best_accuracy))
+    torch.save(best_model, 'check_points/'+model_name+".pth")
+
+
+# My evaluation function
+def eval_multimodal_model(model, validation_data):
+    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        with tqdm(validation_data, unit="batch", desc="Eval") as tepoch:
+            for eo, sar, labels in tepoch:
+                eo, sar, labels = eo.to(device), sar.to(device), labels.to(device)
+                outputs, _, __ = model(eo, sar)
+                predictions = outputs.argmax(dim=1, keepdim=True).squeeze()
+                correct += (predictions == labels).sum().item()
+                total += labels.size(0)
+
+    accuracy = 1.0 * correct / total
+    print('Validation Accuracy on the ' + str(total) + ' validation images: ' + str(round(accuracy, 2)))
+    return accuracy
+
+
+# My training function
+def train_multimodal_model(train_data_path, validation_data_path, type=1):
+    # train_data, validation_data = load_data(data_path)
+    # train_losses = []
+
+    train_dataloader, train_dataset = load_train_data(train_data_path, multimodal=True)
+    validation_dataloader, validation_dataset = load_test_data(validation_data_path, multimodal=True)
+    model = MultiModalResNet18(pretrained=False, num_classes=10, type=type)
+
+    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # model = models.resnet50(pretrained=False)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=0.003)
+    model = nn.DataParallel(model)
+    model.to(device)
+    print(model)
+
+    # Save the best model
+    best_model = None
+    best_accuracy = 0.0
+
+    # loop over the dataset multiple times
+    for epoch in range(num_epoches):  
+        correct = 0
+        total = 0
+        train_loss = 0
+
+        # Weighted random sampling
+        train_dataloader = weighted_random_sampling(train_dataset)
+        with tqdm(train_dataloader, unit="batch", desc="Train Epoch " + str(epoch)) as tepoch:
+            for eo, sar, labels in tepoch:
+                # tepoch.set_description(f"Epoch {epoch}")
+                # get the inputs
+                # print(type(eo), type(sar), type(labels))
+                # eo = torch.from_numpy(np.asarray(eo))
+                # sar = torch.from_numpy(np.asarray(sar))
+                eo, sar, labels = eo.to(device), sar.to(device), labels.to(device)
+
+                # zero the parameter gradients
+                optimizer.zero_grad()
+
+                # forward + get predictions + backward + optimize
+                outputs, eo_feature, sar_feature = model(eo, sar)
+                loss = criterion(outputs, labels)
+                train_loss += loss.item()
+
+                predictions = outputs.argmax(dim=1, keepdim=True).squeeze()
+                correct_prediction = (predictions == labels).sum().item()
+                correct += correct_prediction
+                total += labels.size(0)
+
+                loss.backward()
+                optimizer.step()
+
+                tepoch.set_postfix(loss=loss.item(), accuracy=100. * correct_prediction/labels.size(0))
+        
+        train_accuracy = 1.0 * correct / total
+        validation_accuracy = eval_multimodal_model(model, validation_dataloader)
+        train_loss /= len(train_dataloader)
+
+        # Print parameters
+        print(model.module.fc.lamda)
 
         # Save best model
         if validation_accuracy > best_accuracy:
@@ -367,13 +474,21 @@ def train_model(train_data_path, validation_data_path, modality=1):
 
 
 if __name__ == "__main__":
+    # Set the random Seed
+    np.random.seed(random_seed)
+    # random.seed(seed)
+    torch.manual_seed(random_seed)
+    torch.cuda.manual_seed(random_seed)
+    
     # args = parse_args()
     # if args.test_only:
     #     test(args.model_path)
     # else:
     #     train()
     # load_data(EO_data_folder)
-    # train_model(train_SAR_dir, validation_SAR_dir, modality=1)
-    train_dataloader1, train_dataset1 = load_train_data(train_EO_dir)
-    train_dataloader2, train_dataset2 = load_train_data(train_SAR_dir)
-    weighted_random_sampling2(train_dataset1, train_dataset2)
+    # train_model(train_SAR_dir, validation_SAR_dir)
+    train_multimodal_model(train_dir, validation_dir, type=2)
+    # train_dataloader1, train_dataset1 = load_train_data(train_EO_dir)
+    # train_dataloader2, train_dataset2 = load_train_data(train_SAR_dir)
+    # weighted_random_sampling2(train_dataset1, train_dataset2)
+    # dataset = PbvsDataset(train_dir)
