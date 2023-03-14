@@ -16,7 +16,7 @@ class ClassifierHead(nn.Module):
         self.num_classes = num_classes
         if type == 1:
             self.fc = nn.Linear(input_dim, num_classes)
-        if type == 2:
+        if type == 2 or type == 3:
             self.lamda = nn.Parameter(torch.ones(input_dim))
             self.fc = nn.Linear(input_dim, num_classes)
 
@@ -26,6 +26,8 @@ class ClassifierHead(nn.Module):
             out = self.fc(combined)
         if self.type == 2:
             out = self.fc(eo + self.lamda * sar)
+        if self.type == 3:
+            out = self.fc(eo * (self.lamda * sar))
         return out
 
 
@@ -60,7 +62,7 @@ class MultiModalResNet18(nn.Module):
         self.model2.fc = nn.Identity()
         if type == 1:
             self.fc = ClassifierHead(input_dim=2*last_hidden_dim, num_classes=num_classes, type=self.type)
-        if self.type == 2:
+        if self.type == 2 or self.type == 3:
             self.fc = ClassifierHead(input_dim=last_hidden_dim, num_classes=num_classes, type=self.type)
 
     def forward(self, eo, sar):

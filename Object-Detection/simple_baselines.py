@@ -12,6 +12,7 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 from models import ResNet18, MultiModalResNet18
 from custom_dataset import PbvsDataset
+from pytorch_metric_learning import losses
 
 
 # Device selection
@@ -20,15 +21,16 @@ print("Device:", device, torch.cuda.device_count())
 
 
 # Global Variables
-should_init_wandb = False
+should_init_wandb = True
 enable_wandb_logging = True
-wandb_name = "EOSAR-R18-Add"
-model_name = "EOSAR-R18-Add"
+enable_sup_con_loss = False
+wandb_name = "SAR-R18-BCE"
+model_name = "SAR-R18-BCE"
 num_classes = 10
 batch_size = 256
 random_state = 44
 random_seed = 0
-num_epoches = 60
+num_epoches = 100
 data_dir = "dataset/train-validation_processed/"
 train_dir = data_dir + "train/"
 validation_dir = data_dir + "validation/"
@@ -295,8 +297,8 @@ def train_model(train_data_path, validation_data_path):
             "Train Loss": train_loss,
             "Train Accuracy": train_accuracy,
             "Train Error": 1.0 - train_accuracy,
-            "Validation Accuracy": validation_accuracy,
-            "Validation Error": 1.0 - validation_accuracy,
+            "Test Accuracy": validation_accuracy,
+            "Test Error": 1.0 - validation_accuracy,
         }
         log_wandb(log_data)
 
@@ -335,6 +337,7 @@ def train_multimodal_model(train_data_path, validation_data_path, type=1):
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # model = models.resnet50(pretrained=False)
     criterion = nn.CrossEntropyLoss()
+    sup_con_loss = losses.SupConLoss(temperature=0.1)
     optimizer = optim.Adam(model.parameters(), lr=0.003)
     model = nn.DataParallel(model)
     model.to(device)
@@ -348,7 +351,10 @@ def train_multimodal_model(train_data_path, validation_data_path, type=1):
     for epoch in range(num_epoches):  
         correct = 0
         total = 0
-        train_loss = 0
+        train_bce_loss = 0
+        train_sup_con_loss_eo = 0
+        train_sup_con_loss_sar = 0
+        train_total_loss = 0
 
         # Weighted random sampling
         train_dataloader = weighted_random_sampling(train_dataset)
@@ -366,25 +372,41 @@ def train_multimodal_model(train_data_path, validation_data_path, type=1):
 
                 # forward + get predictions + backward + optimize
                 outputs, eo_feature, sar_feature = model(eo, sar)
-                loss = criterion(outputs, labels)
-                train_loss += loss.item()
+                bce_loss = criterion(outputs, labels)
+                train_bce_loss += bce_loss.item()
+                train_total_loss += bce_loss.item()
+
+                # Supervised Contrastive Loss
+                if enable_sup_con_loss:
+                    eo_sup_loss = sup_con_loss(eo_feature, labels)
+                    sar_sup_loss = sup_con_loss(sar_feature, labels)
+                    train_sup_con_loss_eo += eo_sup_loss.item()
+                    train_sup_con_loss_sar += sar_sup_loss.item()
+
+                    train_total_loss += eo_sup_loss.item() + sar_sup_loss.item()
 
                 predictions = outputs.argmax(dim=1, keepdim=True).squeeze()
                 correct_prediction = (predictions == labels).sum().item()
                 correct += correct_prediction
                 total += labels.size(0)
 
-                loss.backward()
+                total_loss = bce_loss + eo_sup_loss + sar_sup_loss if enable_sup_con_loss else bce_loss
+                total_loss.backward()
                 optimizer.step()
 
-                tepoch.set_postfix(loss=loss.item(), accuracy=100. * correct_prediction/labels.size(0))
+                tepoch.set_postfix(loss=total_loss.item(), accuracy=100. * correct_prediction/labels.size(0))
         
         train_accuracy = 1.0 * correct / total
         validation_accuracy = eval_multimodal_model(model, validation_dataloader)
-        train_loss /= len(train_dataloader)
+        train_total_loss /= len(train_dataloader)
+        train_bce_loss /= len(train_dataloader)
+
+        if enable_sup_con_loss:
+            train_sup_con_loss_eo /= len(train_dataloader)
+            train_sup_con_loss_sar /= len(train_dataloader)
 
         # Print parameters
-        print(model.module.fc.lamda)
+        # print(model.module.fc.lamda)
 
         # Save best model
         if validation_accuracy > best_accuracy:
@@ -393,12 +415,19 @@ def train_multimodal_model(train_data_path, validation_data_path, type=1):
 
         log_data = {
             "Epoch": epoch,
-            "Train Loss": train_loss,
+            "Train Loss": train_total_loss,
             "Train Accuracy": train_accuracy,
             "Train Error": 1.0 - train_accuracy,
-            "Validation Accuracy": validation_accuracy,
-            "Validation Error": 1.0 - validation_accuracy,
+            "Test Accuracy": validation_accuracy,
+            "Test Error": 1.0 - validation_accuracy,
         }
+
+        if enable_sup_con_loss:
+            log_data['Train BCE Loss'] = train_bce_loss
+            log_data['Train EO SupConLoss'] = train_sup_con_loss_eo
+            log_data['Train SAR SupConLoss'] = train_sup_con_loss_sar
+
+        # print(log_data)
         log_wandb(log_data)
 
     print('Finished Training with best validation accuracy ' + str(best_accuracy))
@@ -486,8 +515,15 @@ if __name__ == "__main__":
     # else:
     #     train()
     # load_data(EO_data_folder)
-    # train_model(train_SAR_dir, validation_SAR_dir)
-    train_multimodal_model(train_dir, validation_dir, type=2)
+    train_model(train_SAR_dir, validation_SAR_dir)
+    # train_multimodal_model(train_dir, validation_dir, type=3)
+    # names = ["EOSAR-R18-Cat-BCE+SupCon", "EOSAR-R18-Add-BCE+SupCon", "EOSAR-R18-Mul-BCE+SupCon"]
+    # for i in range(3):
+    #     torch.cuda.empty_cache()
+    #     wandb_name = names[i]
+    #     model_name = names[i]
+    #     wandb.init(project="Object-Detection-EO-SAR", entity="kaykobad", name=wandb_name)
+    #     train_multimodal_model(train_dir, validation_dir, type=i+1)
     # train_dataloader1, train_dataset1 = load_train_data(train_EO_dir)
     # train_dataloader2, train_dataset2 = load_train_data(train_SAR_dir)
     # weighted_random_sampling2(train_dataset1, train_dataset2)
