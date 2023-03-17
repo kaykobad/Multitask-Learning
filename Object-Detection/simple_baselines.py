@@ -10,7 +10,7 @@ import argparse
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 import numpy as np
-from models import ResNet18, MultiModalResNet18
+from models import ResNet18, MultiModalResNet18, ClassifierType
 from custom_dataset import PbvsDataset
 from pytorch_metric_learning import losses
 
@@ -23,14 +23,20 @@ print("Device:", device, torch.cuda.device_count())
 # Global Variables
 should_init_wandb = True
 enable_wandb_logging = True
-enable_sup_con_loss = False
-wandb_name = "SAR-R18-BCE"
-model_name = "SAR-R18-BCE"
+enable_sup_con_loss = True
+
+wandb_name = "EOSAR-R18-Mul+MLP2-H256-CE+SupConP"
+model_name = "EOSAR-R18-Mul+MLP2-H256-CE+SupConP"
+classifier_type = ClassifierType.mlp
+
 num_classes = 10
-batch_size = 256
+batch_size = 128
 random_state = 44
 random_seed = 0
 num_epoches = 100
+fusion_type = 3
+classifier_hidden_dim = 256
+
 data_dir = "dataset/train-validation_processed/"
 train_dir = data_dir + "train/"
 validation_dir = data_dir + "validation/"
@@ -326,13 +332,20 @@ def eval_multimodal_model(model, validation_data):
 
 
 # My training function
-def train_multimodal_model(train_data_path, validation_data_path, type=1):
+def train_multimodal_model(train_data_path, validation_data_path, type=1, classifier=ClassifierType.linear, hidden_dim=512):
     # train_data, validation_data = load_data(data_path)
     # train_losses = []
 
     train_dataloader, train_dataset = load_train_data(train_data_path, multimodal=True)
     validation_dataloader, validation_dataset = load_test_data(validation_data_path, multimodal=True)
-    model = MultiModalResNet18(pretrained=False, num_classes=10, type=type)
+    model = MultiModalResNet18(
+        pretrained=False, 
+        num_classes=10, 
+        type=type, 
+        classifier=classifier, 
+        classifier_hidden_dim=hidden_dim,
+        enable_sup_con_projection=enable_sup_con_loss
+    )
 
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # model = models.resnet50(pretrained=False)
@@ -515,8 +528,8 @@ if __name__ == "__main__":
     # else:
     #     train()
     # load_data(EO_data_folder)
-    train_model(train_SAR_dir, validation_SAR_dir)
-    # train_multimodal_model(train_dir, validation_dir, type=3)
+    # train_model(train_SAR_dir, validation_SAR_dir)
+    train_multimodal_model(train_dir, validation_dir, type=fusion_type, classifier=classifier_type, hidden_dim=classifier_hidden_dim)
     # names = ["EOSAR-R18-Cat-BCE+SupCon", "EOSAR-R18-Add-BCE+SupCon", "EOSAR-R18-Mul-BCE+SupCon"]
     # for i in range(3):
     #     torch.cuda.empty_cache()
