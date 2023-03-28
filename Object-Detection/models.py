@@ -84,7 +84,10 @@ class CommonSpaceProjection(nn.Module):
 class ResNet18(nn.Module):
     def __init__(self, num_classes=10, last_hidden_dim=512, pretrained=False, freeze_backbone=False):
         super(ResNet18, self).__init__()
-        self.model1 = models.resnet18(pretrained=pretrained)
+        # print(pretrained)
+        self.pretrained = pretrained
+        self.pretrained_weights = "IMAGENET1K_V1" if pretrained else None
+        self.model1 = models.resnet18(weights=self.pretrained_weights)
         if freeze_backbone:
             for param in self.model1:
                 param.requires_grad = False
@@ -95,6 +98,7 @@ class ResNet18(nn.Module):
 
 
 # classifier can be either "Linear" of "MLP"
+# Separate backbone for each modality
 class MultiModalResNet18(nn.Module):
     def __init__(
         self, 
@@ -107,11 +111,13 @@ class MultiModalResNet18(nn.Module):
         classifier_hidden_dim=512,
         enable_sup_con_projection=False):
         super(MultiModalResNet18, self).__init__()
+        self.pretrained = pretrained
+        self.pretrained_weights = "IMAGENET1K_V1" if pretrained else None
         self.num_classes = num_classes
         self.type = type
         self.enable_sup_con_projection = enable_sup_con_projection
-        self.model1 = models.resnet18(pretrained=pretrained)
-        self.model2 = models.resnet18(pretrained=pretrained)
+        self.model1 = models.resnet18(weights=self.pretrained_weights)
+        self.model2 = models.resnet18(weights=self.pretrained_weights)
         if freeze_backbone:
             for param in self.model1:
                 param.requires_grad = False
@@ -139,6 +145,59 @@ class MultiModalResNet18(nn.Module):
     def forward(self, eo, sar):
         eo = self.model1(eo)
         sar = self.model2(sar)
+        # print(eo.shape, sar.shape)
+        # combined = torch.cat((eo, sar), 1)
+        out = self.fc(eo, sar)
+        if self.enable_sup_con_projection:
+            eo, sar = self.projection(eo, sar)
+        return out, eo, sar
+
+
+# classifier can be either "Linear" of "MLP"
+class MultiModalResNet18SharedBackbone(nn.Module):
+    def __init__(
+        self, 
+        num_classes=10, 
+        last_hidden_dim=512, 
+        pretrained=False, 
+        freeze_backbone=False, 
+        type=1, 
+        classifier=ClassifierType.linear, 
+        classifier_hidden_dim=512,
+        enable_sup_con_projection=False):
+        super(MultiModalResNet18SharedBackbone, self).__init__()
+        self.num_classes = num_classes
+        self.type = type
+        self.enable_sup_con_projection = enable_sup_con_projection
+        self.pretrained = pretrained
+        self.pretrained_weights = "IMAGENET1K_V1" if pretrained else None
+        self.model = models.resnet18(weights=self.pretrained_weights)
+        if freeze_backbone:
+            for param in self.model1:
+                param.requires_grad = False
+            for param in self.model2:
+                param.requires_grad = False
+        # del self.model1.fc
+        # del self.model2.fc
+        self.model.fc = nn.Identity()
+
+        if enable_sup_con_projection:
+            self.projection = CommonSpaceProjection(input_dim=512, hidden_dim=256, out_dim=256)
+
+        if classifier == ClassifierType.linear:
+            if type == 1:
+                self.fc = ClassifierHead(input_dim=2*last_hidden_dim, num_classes=num_classes, type=self.type)
+            if self.type == 2 or self.type == 3:
+                self.fc = ClassifierHead(input_dim=last_hidden_dim, num_classes=num_classes, type=self.type)
+        elif classifier == ClassifierType.mlp:
+            if type == 1:
+                self.fc = MLPClassifierHead(input_dim=2*last_hidden_dim, num_classes=num_classes, type=self.type, hidden_dim=classifier_hidden_dim)
+            if self.type == 2 or self.type == 3:
+                self.fc = MLPClassifierHead(input_dim=last_hidden_dim, num_classes=num_classes, type=self.type, hidden_dim=classifier_hidden_dim)
+
+    def forward(self, eo, sar):
+        eo = self.model(eo)
+        sar = self.model(sar)
         # print(eo.shape, sar.shape)
         # combined = torch.cat((eo, sar), 1)
         out = self.fc(eo, sar)

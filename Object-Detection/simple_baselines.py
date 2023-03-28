@@ -10,7 +10,7 @@ import argparse
 from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 import numpy as np
-from models import ResNet18, MultiModalResNet18, ClassifierType
+from models import ResNet18, MultiModalResNet18, ClassifierType, MultiModalResNet18SharedBackbone
 from custom_dataset import PbvsDataset
 from pytorch_metric_learning import losses
 
@@ -23,10 +23,12 @@ print("Device:", device, torch.cuda.device_count())
 # Global Variables
 should_init_wandb = True
 enable_wandb_logging = True
-enable_sup_con_loss = True
+enable_sup_con_loss = False
+shared_backbone = False
+use_pretrained_model = False
 
-wandb_name = "EOSAR-R18-Mul+MLP2-H256-CE+SupConP"
-model_name = "EOSAR-R18-Mul+MLP2-H256-CE+SupConP"
+wandb_name = "TEST-EOSAR-R18-Add-CE"
+model_name = wandb_name
 classifier_type = ClassifierType.mlp
 
 num_classes = 10
@@ -34,7 +36,7 @@ batch_size = 128
 random_state = 44
 random_seed = 0
 num_epoches = 100
-fusion_type = 3
+fusion_type = 1
 classifier_hidden_dim = 256
 
 data_dir = "dataset/train-validation_processed/"
@@ -243,7 +245,7 @@ def train_model(train_data_path, validation_data_path):
 
     train_dataloader, train_dataset = load_train_data(train_data_path)
     validation_dataloader, validation_dataset = load_test_data(validation_data_path)
-    model = ResNet18(pretrained=False, num_classes=10)
+    model = ResNet18(pretrained=use_pretrained_model, num_classes=10)
 
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # model = models.resnet50(pretrained=False)
@@ -332,20 +334,35 @@ def eval_multimodal_model(model, validation_data):
 
 
 # My training function
-def train_multimodal_model(train_data_path, validation_data_path, type=1, classifier=ClassifierType.linear, hidden_dim=512):
+def train_multimodal_model(
+    train_data_path, 
+    validation_data_path, 
+    type=1, 
+    classifier=ClassifierType.linear, 
+    hidden_dim=512):
     # train_data, validation_data = load_data(data_path)
     # train_losses = []
 
     train_dataloader, train_dataset = load_train_data(train_data_path, multimodal=True)
     validation_dataloader, validation_dataset = load_test_data(validation_data_path, multimodal=True)
-    model = MultiModalResNet18(
-        pretrained=False, 
+    if shared_backbone:
+        model = MultiModalResNet18SharedBackbone(
+        pretrained=use_pretrained_model, 
         num_classes=10, 
         type=type, 
         classifier=classifier, 
         classifier_hidden_dim=hidden_dim,
         enable_sup_con_projection=enable_sup_con_loss
     )
+    else:
+        model = MultiModalResNet18(
+            pretrained=use_pretrained_model, 
+            num_classes=10, 
+            type=type, 
+            classifier=classifier, 
+            classifier_hidden_dim=hidden_dim,
+            enable_sup_con_projection=enable_sup_con_loss
+        )
 
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # model = models.resnet50(pretrained=False)
