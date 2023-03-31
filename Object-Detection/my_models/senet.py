@@ -62,47 +62,47 @@ class SEBasicBlock(nn.Module):
         return out
 
 
-# class SEBottleneck(nn.Module):
-#     expansion = 4
+class SEBottleneck(nn.Module):
+    expansion = 4
 
-#     def __init__(self, inplanes, planes, stride=1, downsample=None, groups=1,
-#                  base_width=64, dilation=1, norm_layer=None,
-#                  *, reduction=16):
-#         super(SEBottleneck, self).__init__()
-#         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
-#         self.bn1 = nn.BatchNorm2d(planes)
-#         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
-#                                padding=1, bias=False)
-#         self.bn2 = nn.BatchNorm2d(planes)
-#         self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
-#         self.bn3 = nn.BatchNorm2d(planes * 4)
-#         self.relu = nn.ReLU(inplace=True)
-#         self.se = SELayer(planes * 4, reduction)
-#         self.downsample = downsample
-#         self.stride = stride
+    def __init__(self, inplanes, planes, stride=1, downsample=None, groups=1,
+                 base_width=64, dilation=1, norm_layer=None,
+                 *, reduction=16):
+        super(SEBottleneck, self).__init__()
+        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(planes)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
+                               padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
+        self.bn3 = nn.BatchNorm2d(planes * 4)
+        self.relu = nn.ReLU(inplace=True)
+        self.se = SELayer(planes * 4, reduction)
+        self.downsample = downsample
+        self.stride = stride
 
-#     def forward(self, x):
-#         residual = x
+    def forward(self, x):
+        residual = x
 
-#         out = self.conv1(x)
-#         out = self.bn1(out)
-#         out = self.relu(out)
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
 
-#         out = self.conv2(out)
-#         out = self.bn2(out)
-#         out = self.relu(out)
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out = self.relu(out)
 
-#         out = self.conv3(out)
-#         out = self.bn3(out)
-#         out = self.se(out)
+        out = self.conv3(out)
+        out = self.bn3(out)
+        out = self.se(out)
 
-#         if self.downsample is not None:
-#             residual = self.downsample(x)
+        if self.downsample is not None:
+            residual = self.downsample(x)
 
-#         out += residual
-#         out = self.relu(out)
+        out += residual
+        out = self.relu(out)
 
-#         return out
+        return out
 
 
 def se_resnet18(num_classes=1000):
@@ -124,27 +124,27 @@ def se_resnet18(num_classes=1000):
 #     return model
 
 
-# def se_resnet50(num_classes=1_000, pretrained=False):
-#     """Constructs a ResNet-50 model.
-#     Args:
-#         pretrained (bool): If True, returns a model pre-trained on ImageNet
-#     """
-#     model = ResNet(SEBottleneck, [3, 4, 6, 3], num_classes=num_classes)
-#     model.avgpool = nn.AdaptiveAvgPool2d(1)
-#     if pretrained:
-#         model.load_state_dict(load_state_dict_from_url(
-#             "https://github.com/moskomule/senet.pytorch/releases/download/archive/seresnet50-60a8950a85b2b.pkl"))
-#     return model
+def se_resnet50(num_classes=1000, pretrained=False):
+    """Constructs a ResNet-50 model.
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+    """
+    model = ResNet(SEBottleneck, [3, 4, 6, 3], num_classes=num_classes)
+    model.avgpool = nn.AdaptiveAvgPool2d(1)
+    if pretrained:
+        model.load_state_dict(load_state_dict_from_url(
+            "https://github.com/moskomule/senet.pytorch/releases/download/archive/seresnet50-60a8950a85b2b.pkl"))
+    return model
 
 
-# def se_resnet101(num_classes=1_000):
-#     """Constructs a ResNet-101 model.
-#     Args:
-#         pretrained (bool): If True, returns a model pre-trained on ImageNet
-#     """
-#     model = ResNet(SEBottleneck, [3, 4, 23, 3], num_classes=num_classes)
-#     model.avgpool = nn.AdaptiveAvgPool2d(1)
-#     return model
+def se_resnet101(num_classes=1000):
+    """Constructs a ResNet-101 model.
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+    """
+    model = ResNet(SEBottleneck, [3, 4, 23, 3], num_classes=num_classes)
+    model.avgpool = nn.AdaptiveAvgPool2d(1)
+    return model
 
 
 # def se_resnet152(num_classes=1_000):

@@ -11,7 +11,7 @@ from tqdm import tqdm
 from sklearn.model_selection import train_test_split
 import numpy as np
 from my_models.resnet_models import ClassifierType, ResNet18, MultiModalResNet18, MultiModalResNet18SharedBackbone
-from my_models.se_resnet_models import SeResNet18, MultiModalSeResNet18, MultiModalSeResNet18SharedBackbone
+from my_models.se_resnet_models import SeResNet18, SeResNet50, SeResNet101, MultiModalSeResNet18, MultiModalSeResNet18SharedBackbone, MultiModalSeResNet50SharedBackbone, MultiModalSeResNet50
 from custom_dataset import PbvsDataset
 from pytorch_metric_learning import losses
 
@@ -19,6 +19,8 @@ from pytorch_metric_learning import losses
 class BackBoneType:
     resnet18 = "resnet18"
     se_resnet18 = "se_resnet18"
+    se_resnet50 = "se_resnet50"
+    se_resnet101 = "se_resnet101"
 
 
 # Device selection
@@ -29,24 +31,24 @@ print("Device:", device, torch.cuda.device_count())
 # Global Variables
 should_init_wandb = True
 enable_wandb_logging = True
-enable_sup_con_loss = True
-shared_backbone = True
+enable_sup_con_loss = False
+shared_backbone = False
 use_pretrained_model = False
 
-wandb_name = "EOSAR-SharedBB-SR18-Mul+MLP2-H512-CE+SupConP"
+wandb_name = "EO-SR50-CE"
 model_name = wandb_name
 classifier_type = ClassifierType.mlp
-backbone = BackBoneType.se_resnet18
+backbone = BackBoneType.se_resnet50
 
 num_classes = 10
-batch_size = 128
+batch_size = 64
 random_state = 44
 random_seed = 0
 num_epoches = 100
 fusion_type = 3
 classifier_hidden_dim = 512
 
-data_dir = "dataset/train-validation_processed/"
+data_dir = "dataset/2022/train-validation_processed/"
 train_dir = data_dir + "train/"
 validation_dir = data_dir + "validation/"
 train_EO_dir = train_dir + "EO/"
@@ -257,6 +259,10 @@ def train_model(train_data_path, validation_data_path):
         model = ResNet18(pretrained=use_pretrained_model, num_classes=10)
     elif backbone == BackBoneType.se_resnet18:
         model = SeResNet18(pretrained=use_pretrained_model, num_classes=10)
+    elif backbone == BackBoneType.se_resnet50:
+        model = SeResNet50(pretrained=use_pretrained_model, num_classes=10)
+    elif backbone == BackBoneType.se_resnet101:
+        model = SeResNet101(pretrained=use_pretrained_model, num_classes=10)
 
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # model = models.resnet50(pretrained=False)
@@ -389,6 +395,25 @@ def train_multimodal_model(
         )
         else:
             model = MultiModalSeResNet18(
+                pretrained=use_pretrained_model, 
+                num_classes=10, 
+                type=type, 
+                classifier=classifier, 
+                classifier_hidden_dim=hidden_dim,
+                enable_sup_con_projection=enable_sup_con_loss
+            )
+    elif backbone == BackBoneType.se_resnet50:
+        if shared_backbone:
+            model = MultiModalSeResNet50SharedBackbone(
+            pretrained=use_pretrained_model, 
+            num_classes=10, 
+            type=type, 
+            classifier=classifier, 
+            classifier_hidden_dim=hidden_dim,
+            enable_sup_con_projection=enable_sup_con_loss
+        )
+        else:
+            model = MultiModalSeResNet50(
                 pretrained=use_pretrained_model, 
                 num_classes=10, 
                 type=type, 
@@ -578,8 +603,8 @@ if __name__ == "__main__":
     # else:
     #     train()
     # load_data(EO_data_folder)
-    # train_model(train_SAR_dir, validation_SAR_dir)
-    train_multimodal_model(train_dir, validation_dir, type=fusion_type, classifier=classifier_type, hidden_dim=classifier_hidden_dim)
+    train_model(train_EO_dir, validation_EO_dir)
+    # train_multimodal_model(train_dir, validation_dir, type=fusion_type, classifier=classifier_type, hidden_dim=classifier_hidden_dim)
     # names = ["EOSAR-R18-Cat-BCE+SupCon", "EOSAR-R18-Add-BCE+SupCon", "EOSAR-R18-Mul-BCE+SupCon"]
     # for i in range(3):
     #     torch.cuda.empty_cache()
