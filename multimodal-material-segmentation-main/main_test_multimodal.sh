@@ -1,0 +1,18 @@
+CUDA_VISIBLE_DEVICES=0 python test.py \
+  --backbone resnet_adv \
+  --lr 0.05 \
+  --workers 2 \
+  --epochs 1 \
+  --batch-size 1 \
+  --gpu-ids 0 \
+  --pth-path ./run/multimodal_dataset/MCubeSNet/experiment_10/checkpoint-latest-pytorch.pth.tar \
+  --eval-interval 1 \
+  --ratio 3 \
+  --loss-type ce \
+  --dataset multimodal_dataset \
+  --list-folder list_folder \
+  --use-pretrained-resnet \
+  --is-multimodal \
+  --use-dolp \
+  --use-aolp \
+  --use-nir
