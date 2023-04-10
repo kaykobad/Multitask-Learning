@@ -42,8 +42,8 @@ def make_data_loader(args, **kwargs):
     if args.dataset == 'multimodal_dataset':
         train_set = multimodal_dataset.MultimodalDatasetSegmentation(args, split='train')
         val_set = multimodal_dataset.MultimodalDatasetSegmentation(args, split='val')
-        # test_set = multimodal_dataset.MultimodalDatasetSegmentation(args, split='test')
-        test_set = multimodal_dataset.MultimodalDatasetSegmentation(args, split='visualize')
+        test_set = multimodal_dataset.MultimodalDatasetSegmentation(args, split='test')
+        # test_set = multimodal_dataset.MultimodalDatasetSegmentation(args, split='visualize')
 
         num_class = train_set.NUM_CLASSES
         train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, **kwargs)

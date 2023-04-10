@@ -34,6 +34,9 @@ class TrainerMultimodal(object):
 
         # Define network
         input_dim = 3
+
+        model_path = "saved_models/checkpoint-latest-best-pytorch-2.pth.tar"
+        checkpoint = torch.load(model_path)
         
         model = DeepLabMultiInput(num_classes=self.nclass,
                         backbone=args.backbone,
@@ -44,6 +47,7 @@ class TrainerMultimodal(object):
                         ratio=args.ratio,
                         pretrained=args.use_pretrained_resnet)
         
+        model.load_state_dict(checkpoint['state_dict'])
 
         train_params = [{'params': model.get_1x_lr_params(), 'lr': args.lr},
                         {'params': model.get_10x_lr_params(), 'lr': args.lr*10}]
@@ -486,7 +490,7 @@ if __name__ == "__main__":
                         help='use multihead architecture')
 
     # ------------------- Wandb -------------------
-    wandb.init(project="Material-Segmentation-MCubeS", entity="kaykobad", name="MCubeSNet-SSGT4MS-2")
+    wandb.init(project="Material-Segmentation-MCubeS", entity="kaykobad", name="MCubeSNet-SSGT4MS-3")
 
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()

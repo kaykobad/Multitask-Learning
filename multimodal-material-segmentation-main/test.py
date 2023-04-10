@@ -85,7 +85,7 @@ class TesterMultimodal(object):
         # Define network
         input_dim = 3
 
-        model_path = "saved_models/checkpoint-latest-pytorch.pth.tar"
+        model_path = "saved_models/checkpoint-latest-best-pytorch-2.pth.tar"
         checkpoint = torch.load(model_path)
         
         self.model = DeepLabMultiInput(num_classes=self.nclass,

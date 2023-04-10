@@ -112,10 +112,10 @@ class MultimodalDatasetSegmentation(Dataset):
                 return self.transform_tr(sample)
             elif split == 'val':
                 return self.transform_val(sample)
-            # elif split == 'test':
-            #     return self.transform_val(sample)
-            elif split == 'visualize':
+            elif split == 'test':
                 return self.transform_val(sample)
+            # elif split == 'visualize':
+            #     return self.transform_val(sample)
 
 
     def _make_img_gt_point_pair(self, index):
