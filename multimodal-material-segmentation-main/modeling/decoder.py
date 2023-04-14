@@ -13,7 +13,7 @@ class Decoder(nn.Module):
         if backbone == 'resnet' or backbone == 'drn' :
             low_level_inplanes = 256
             last_conv_input = 304
-        elif backbone == 'resnet_adv'or backbone=='resnet_condconv':
+        elif backbone == 'resnet_adv' or backbone=='resnet_condconv':
             low_level_inplanes = 256*input_heads
             last_conv_input = 256*input_heads + 48
         elif backbone == 'xception':
@@ -35,14 +35,15 @@ class Decoder(nn.Module):
         self.bn1 = BatchNorm(48)
         self.relu = nn.ReLU()
         self.condconv1 = RGFSConv(last_conv_input, 256, ratio, kernel_size=3, stride=1, padding=1, bias=False)
+        # self.condconv1 = nn.Conv2d(last_conv_input, 256, kernel_size=3, stride=1, padding=1, bias=False)
         self.last_conv = nn.Sequential(
                                     BatchNorm(256),
                                     nn.ReLU(),
-                                    nn.Dropout(0.5),
+                                    # nn.Dropout(0.5),
                                     nn.Conv2d(256, 256, kernel_size=3, stride=1, padding=1, bias=False),
                                     BatchNorm(256),
                                     nn.ReLU(),
-                                    nn.Dropout(0.1),
+                                    # nn.Dropout(0.1),
                                     nn.Conv2d(256, num_classes, kernel_size=1, stride=1))
         self._init_weight()
 
@@ -58,6 +59,7 @@ class Decoder(nn.Module):
         x = torch.cat((x, low_level_feat), dim=1)
         # print(f"Combined Feature after Shape: {x.shape}")      # batch x 1072 x 256 x 256
         x = self.condconv1(x, mask)
+        # x = self.condconv1(x)
         # print(f"RGFS output Shape: {x.shape}")      # batch x 256 x 256 x 256
         x = self.last_conv(x)
         # print(f"Last conv output Shape: {x.shape}")    # batch x 20 x 256 x 256

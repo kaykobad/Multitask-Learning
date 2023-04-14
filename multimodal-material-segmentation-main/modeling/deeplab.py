@@ -39,6 +39,8 @@ class DeepLabMultiInput(nn.Module):
         x1 = self.aspp1(x1)
         # print(f"ASPP Output Shape: {x1.shape}")     # batch x 256 x 64 x 64
 
+        # print(input2, input3, input4)
+
         # AoLP
         if input2 is not None:
             # print(input2.shape)     # batch x 2 x 1024 x 1024

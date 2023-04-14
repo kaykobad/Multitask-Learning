@@ -22,13 +22,13 @@ class Saver(object):
         torch.save(state, filename)
         if is_best:
             best_pred = state['best_pred']
-            with open(os.path.join(self.experiment_dir, 'best_pred-latest-3.txt'), 'w') as f:
+            with open(os.path.join(self.experiment_dir, 'best_pred.txt'), 'w') as f:
                 f.write(str(best_pred))
             if self.runs:
                 previous_miou = [0.0]
                 for run in self.runs:
                     run_id = run.split('_')[-1]
-                    path = os.path.join(self.directory, 'experiment_{}'.format(str(run_id)), 'best_pred-latest-3.txt')
+                    path = os.path.join(self.directory, 'experiment_{}'.format(str(run_id)), 'best_pred.txt')
                     if os.path.exists(path):
                         with open(path, 'r') as f:
                             #print(f.readline())
