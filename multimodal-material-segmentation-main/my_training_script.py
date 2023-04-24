@@ -4,11 +4,11 @@ import wandb
 import numpy as np
 from tqdm import tqdm
 import random
-from modeling.sync_batchnorm.batchnorm import SynchronizedBatchNorm2d
 from mypath import Path
 from dataloaders import make_data_loader
 from modeling.sync_batchnorm.replicate import patch_replication_callback
-from modeling.deeplab import *
+from modeling.my_deeplab_impl import *
+from modeling.my_deeplab_impl_2 import *
 from utils.loss import SegmentationLosses
 from utils.calculate_weights import calculate_weigths_labels
 from utils.lr_scheduler import LR_Scheduler
@@ -21,6 +21,15 @@ class TrainerMultimodal(object):
     def __init__(self, args):
         self.args = args
 
+        # Count modalities
+        self.num_modalities = 1
+        # if self.args.use_aolp:
+        #     self.num_modalities += 1
+        # if self.args.use_dolp:
+        #     self.num_modalities += 1
+        # if self.args.use_nir:
+        #     self.num_modalities += 1
+
         # Define Saver
         self.saver = Saver(args)
         self.saver.save_experiment_config()
@@ -31,23 +40,28 @@ class TrainerMultimodal(object):
         # Define Dataloader
         kwargs = {'num_workers': args.workers, 'pin_memory': True}
         self.train_loader, self.val_loader, self.test_loader, self.nclass = make_data_loader(args, **kwargs)
-
-        # Define network
-        input_dim = 3
-
-        # model_path = "saved_models/checkpoint-latest-best-pytorch-2.pth.tar"
-        # checkpoint = torch.load(model_path)
         
-        model = DeepLabMultiInput(num_classes=self.nclass,
+        # model = DeepLabV3Plus(num_classes=self.nclass,
+        #                 backbone=args.backbone,
+        #                 output_stride=args.out_stride,
+        #                 sync_bn=args.sync_bn,
+        #                 freeze_bn=args.freeze_bn,
+        #                 pretrained=args.use_pretrained_resnet,
+        #                 num_modalities=self.num_modalities)
+
+        model = DeepLab(num_classes=21,
                         backbone=args.backbone,
                         output_stride=args.out_stride,
                         sync_bn=args.sync_bn,
-                        freeze_bn=args.freeze_bn,
-                        input_dim=input_dim,
-                        ratio=args.ratio,
-                        pretrained=args.use_pretrained_resnet)
+                        freeze_bn=args.freeze_bn)
         
-        # model.load_state_dict(checkpoint['state_dict'])
+        # Load saved model
+        # model_path = "saved_models/pretrained-deeplab-resnet.pth.tar"
+        # checkpoint = torch.load(model_path)
+        # model.load_state_dict(checkpoint['state_dict'], strict=False)
+
+        # Replace the last layer
+        # model.decoder.last_conv[8] = nn.Conv2d(256, self.nclass, kernel_size=1, stride=1)
 
         train_params = [{'params': model.get_1x_lr_params(), 'lr': args.lr},
                         {'params': model.get_10x_lr_params(), 'lr': args.lr*10}]
@@ -78,13 +92,13 @@ class TrainerMultimodal(object):
 
         # Using cuda
         if args.cuda:
-            self.model = self.model.cuda()
             # self.model = torch.nn.DataParallel(self.model)
             print("Using GPU: ", self.args.gpu_ids)
             print("Total GPU Available: ", torch.cuda.device_count())
             self.model = torch.nn.DataParallel(self.model, device_ids=self.args.gpu_ids)
             #self.mask_model = torch.nn.DataParallel(self.mask_model, device_ids=self.args.gpu_ids)
             patch_replication_callback(self.model)
+            self.model = self.model.cuda()
             
 
         # Resuming checkpoint
@@ -127,26 +141,8 @@ class TrainerMultimodal(object):
                 # print(nir.shape)
             # ------------------ My Modification End --------------------------
 
-            # # check tensors
-            # import matplotlib.pyplot as plt
-            # import sys
-            # img_np = image[0,0].numpy()
-            # target_np = target[0].numpy()
-            # aolp_np = np.arctan2(aolp[0,0].numpy(),aolp[0,1].numpy())
-            # dolp_np = dolp[0,0].numpy()
-            # nir_np = nir[0,0].numpy()
-            # print('saveing')
-            # plt.imsave('np_img.png',img_np)
-            # plt.imsave('np_target.png',target_np)
-            # plt.imsave('np_aolp.png',aolp_np)
-            # plt.imsave('np_dolp.png',dolp_np)
-            # plt.imsave('np_nir.png',nir_np)
-            # print('done')
-            # input('press enter')
-            # continue
-
             if self.args.cuda:
-                image, target, aolp, dolp, nir, nir_mask,  u_map, v_map, mask = image.cuda(), target.cuda(), aolp.cuda(), dolp.cuda(), nir.cuda(), nir_mask.cuda(), u_map.cuda(), v_map.cuda(), mask.cuda()
+                image, target, aolp, dolp, nir, nir_mask, u_map, v_map, mask = image.cuda(), target.cuda(), aolp.cuda(), dolp.cuda(), nir.cuda(), nir_mask.cuda(), u_map.cuda(), v_map.cuda(), mask.cuda()
             self.scheduler(self.optimizer, i, epoch, self.best_pred)
             self.optimizer.zero_grad()
             aolp = aolp if self.args.use_aolp else None
@@ -155,7 +151,9 @@ class TrainerMultimodal(object):
             nir_mask = nir_mask  if self.args.use_nir else None            
             
             with torch.cuda.amp.autocast():
-                output = self.model(image, aolp, dolp, nir, mask)
+                # output = self.model(image, nir, aolp, dolp)
+                # print("Training: ", image.shape, " >==> ", output.shape)
+                output = self.model(image)
                 loss = self.criterion(output, target, nir_mask)
             scaler.scale(loss).backward()
             scaler.step(self.optimizer)
@@ -190,7 +188,6 @@ class TrainerMultimodal(object):
             "Train Pixel Acc_class": Acc_class,
             "Train FWIoU": FWIoU,
         }
-        # wandb.log(log_data)
         # -------------------- My Modification End ----------------------
 
         self.writer.add_scalar('train/total_loss_epoch', train_loss, epoch)
@@ -198,15 +195,15 @@ class TrainerMultimodal(object):
         print("Acc:{}, Acc_class:{}, mIoU:{}, fwIoU: {}".format(Acc, Acc_class, mIoU, FWIoU))
         print('Loss: %.3f' % train_loss)
 
-        if self.args.no_val:
-            # save checkpoint every epoch
-            is_best = False
-            self.saver.save_checkpoint({
-                'epoch': epoch + 1,
-                'state_dict': self.model.module.state_dict(),
-                'optimizer': self.optimizer.state_dict(),
-                'best_pred': self.best_pred,
-            }, is_best, filename="checkpoint-latest-intermediate-pytorch-1.pth.tar")
+        # if self.args.no_val:
+        #     # save checkpoint every epoch
+        #     is_best = False
+        #     self.saver.save_checkpoint({
+        #         'epoch': epoch + 1,
+        #         'state_dict': self.model.module.state_dict(),
+        #         'optimizer': self.optimizer.state_dict(),
+        #         'best_pred': self.best_pred,
+        #     }, is_best, filename="checkpoint-latest-intermediate-pytorch-1.pth.tar")
 
         # -------------------- My Modification Start ----------------------
         return log_data
@@ -218,7 +215,6 @@ class TrainerMultimodal(object):
         self.evaluator.reset()
         tbar = tqdm(self.val_loader, desc='\r')
         test_loss = 0.0
-        scaler = torch.cuda.amp.GradScaler()
         for i, sample in enumerate(tbar):
             image, target, aolp, dolp, nir, nir_mask, u_map, v_map, mask = \
                 sample['image'], sample['label'], sample['aolp'], sample['dolp'], sample['nir'], sample['nir_mask'], sample['u_map'], sample['v_map'], sample['mask']
@@ -239,29 +235,11 @@ class TrainerMultimodal(object):
             nir  = nir  if self.args.use_nir else None
             nir_mask = nir_mask  if self.args.use_nir else None  
 
-            # # -------------- My Modification Start ----------------------
-            # # dolp = dolp if self.args.use_dolp else None
-            # if self.args.use_dolp:
-            #     if len(dolp.shape) != 4:  # avoide automatic squeeze in later version of pytorch data loading
-            #         dolp = dolp.unsqueeze(1)
-            #     else:
-            #         dolp = dolp
-            # else:
-            #     dolp = None
-
-            # # nir  = nir  if self.args.use_nir else None
-            # if self.args.use_nir:
-            #     if len(nir.shape) != 4:  # avoide automatic squeeze in later version of pytorch data loading
-            #         nir = nir.unsqueeze(1)
-            #     else:
-            #         nir = nir
-            # else:
-            #     nir = nir
-            # # -------------- My Modification End ----------------------         
-            
             with torch.cuda.amp.autocast():
                 with torch.no_grad():
-                    output = self.model(image, aolp, dolp, nir, mask)
+                    # output = self.model(image, nir, aolp, dolp)
+                    # print("Validation: ", image.shape, " >==> ", output.shape)
+                    output = self.model(image)
                     
                 loss = self.criterion(output, target, nir_mask)
             test_loss += loss.item()
@@ -291,7 +269,6 @@ class TrainerMultimodal(object):
             "Validation Pixel Acc_class": Acc_class,
             "Validation FWIoU": FWIoU,
         }
-        # wandb.log(log_data)
         # -------------------- My Modification End ----------------------
 
         global_step = epoch
@@ -306,9 +283,6 @@ class TrainerMultimodal(object):
         l_data = self.test(epoch)
         log_data.update(l_data)
         if new_pred > self.best_pred:
-            # if True:
-            #     l_data = self.test(epoch)
-            #     log_data.update(l_data)
             is_best = True
             self.best_pred = new_pred
             self.saver.save_checkpoint({
@@ -316,7 +290,7 @@ class TrainerMultimodal(object):
                 'state_dict': self.model.module.state_dict(),
                 'optimizer': self.optimizer.state_dict(),
                 'best_pred': self.best_pred,
-            }, is_best, filename="MCubeSNet-All-wo-Dropout+RGFS.pth.tar")
+            }, is_best, filename=f"{args.model_name}.pth.tar")
 
         # -------------------- My Modification Start ----------------------
         return log_data
@@ -327,7 +301,6 @@ class TrainerMultimodal(object):
         self.evaluator.reset()
         tbar = tqdm(self.test_loader, desc='\r')
         test_loss = 0.0
-        scaler = torch.cuda.amp.GradScaler()
         output_all = None
         for i, sample in enumerate(tbar):
             image, target, aolp, dolp, nir, nir_mask, u_map, v_map, mask = \
@@ -350,29 +323,11 @@ class TrainerMultimodal(object):
             nir  = nir  if self.args.use_nir else None
             nir_mask = nir_mask  if self.args.use_nir else None  
 
-            # # -------------- My Modification Start ----------------------
-            # # dolp = dolp if self.args.use_dolp else None
-            # if self.args.use_dolp:
-            #     if len(dolp.shape) != 4:  # avoide automatic squeeze in later version of pytorch data loading
-            #         dolp = dolp.unsqueeze(1)
-            #     else:
-            #         dolp = dolp
-            # else:
-            #     dolp = None
-
-            # # nir  = nir  if self.args.use_nir else None
-            # if self.args.use_nir:
-            #     if len(nir.shape) != 4:  # avoide automatic squeeze in later version of pytorch data loading
-            #         nir = nir.unsqueeze(1)
-            #     else:
-            #         nir = nir
-            # else:
-            #     nir = nir
-            # # -------------- My Modification End ----------------------           
-            
             with torch.cuda.amp.autocast():
                 with torch.no_grad():
-                    output = self.model(image, aolp, dolp, nir, mask)
+                    # output = self.model(image, nir, aolp, dolp)
+                    # print("Test: ", image.shape, " >==> ", output.shape)
+                    output = self.model(image)
                 loss = self.criterion(output, target, nir_mask)
             test_loss += loss.item()
             tbar.set_description('Test loss: %.3f' % (test_loss / (i + 1)))
@@ -405,7 +360,6 @@ class TrainerMultimodal(object):
             "Test Pixel Acc_class": Acc_class,
             "Test FWIoU": FWIoU,
         }
-        # wandb.log(log_data)
         # -------------------- My Modification End ----------------------
 
         global_step = epoch
@@ -430,6 +384,8 @@ if __name__ == "__main__":
     parser.add_argument('--dataset', type=str, default='pascal',
                         choices=['pascal', 'coco', 'cityscapes', 'kitti', 'kitti_advanced', 'kitti_advanced_manta', 'handmade_dataset', 'handmade_dataset_stereo', 'multimodal_dataset'],
                         help='dataset name (default: pascal)')
+    parser.add_argument('--model-name', type=str, default='DeeplabV3Plus-Unnamed',
+                        help='Modle name for wandb and checkpoint (default: pascal)')
     parser.add_argument('--use-sbd', action='store_true', default=False,
                         help='whether to use SBD dataset (default: True)')
     parser.add_argument('--workers', type=int, default=4,
@@ -512,8 +468,6 @@ if __name__ == "__main__":
                         help='use multihead architecture')
 
     # ------------------- Wandb -------------------
-    wandb.init(project="Material-Segmentation-MCubeS", entity="kaykobad", name="MCubeSNet-All-wo-Dropout+RGFS")
-
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     if args.cuda:
@@ -529,15 +483,15 @@ if __name__ == "__main__":
             args.sync_bn = False
 
     # default settings for epochs, batch_size and lr
-    if args.epochs is None:
-        epoches = {
-            'coco': 30,
-            'cityscapes': 200,
-            'pascal': 50,
-            'kitti': 50,
-            'kitti_advanced': 50
-        }
-        args.epochs = epoches[args.dataset.lower()]
+    # if args.epochs is None:
+    #     epoches = {
+    #         'coco': 30,
+    #         'cityscapes': 200,
+    #         'pascal': 50,
+    #         'kitti': 50,
+    #         'kitti_advanced': 50
+    #     }
+    #     args.epochs = epoches[args.dataset.lower()]
 
     if args.batch_size is None:
         args.batch_size = 4 * len(args.gpu_ids)
@@ -545,18 +499,18 @@ if __name__ == "__main__":
     if args.test_batch_size is None:
         args.test_batch_size = args.batch_size
 
-    if args.lr is None:
-        lrs = {
-            'coco': 0.1,
-            'cityscapes': 0.01,
-            'pascal': 0.007,
-            'kitti' : 0.01,
-            'kitti_advanced' : 0.01
-        }
-        args.lr = lrs[args.dataset.lower()] / (4 * len(args.gpu_ids)) * args.batch_size
+    # if args.lr is None:
+    #     lrs = {
+    #         'coco': 0.1,
+    #         'cityscapes': 0.01,
+    #         'pascal': 0.007,
+    #         'kitti' : 0.01,
+    #         'kitti_advanced' : 0.01
+    #     }
+    #     args.lr = lrs[args.dataset.lower()] / (4 * len(args.gpu_ids)) * args.batch_size
 
-    if args.checkname is None:
-        args.checkname = 'deeplab-'+str(args.backbone)
+    # if args.checkname is None:
+    #     args.checkname = 'deeplab-'+str(args.backbone)
     print(args)
     # input('Check arguments! Press Enter...')
     # os.environ['PYTHONHASHSEED'] = str(args.seed)
@@ -568,10 +522,12 @@ if __name__ == "__main__":
     # torch.backends.cudnn.deterministic = True
     # torch.backends.cudnn.benchmark = False
 
-    # trainer = Trainer(args)
-    if args.is_multimodal:
-        print("USE Multimodal Model")
-        trainer = TrainerMultimodal(args)
+    wandb.init(project="Material-Segmentation-MCubeS", entity="kaykobad", name=args.model_name)
+
+    trainer = TrainerMultimodal(args)
+    # if args.is_multimodal:
+    #     print("USE Multimodal Model")
+    #     trainer = TrainerMultimodal(args)
     
     print('Starting Epoch:', trainer.args.start_epoch)
     print('Total Epoches:', trainer.args.epochs)

@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from mypath import Path
 from dataloaders import make_data_loader
 from modeling.sync_batchnorm.replicate import patch_replication_callback
-from modeling.deeplab import *
+from modeling.my_deeplab_impl_2 import *
 from utils.loss import SegmentationLosses
 from utils.calculate_weights import calculate_weigths_labels
 from utils.lr_scheduler import LR_Scheduler
@@ -18,6 +18,8 @@ from utils.metrics import Evaluator
 import matplotlib.image
 import cv2
 
+mIoUs = []
+FWIoUs = []
 
 
 LABEL_COLORS_NEW_JP = {
@@ -63,11 +65,6 @@ LABEL_COLORS_NEW_EN = {
     "#6b6ecf" : "water",        #17
     "#9c9ede" : "human body",   #18
     "#637939" : "sky"}          #19
-
-
-        
-
-        
        
         
 class TesterMultimodal(object):
@@ -85,23 +82,18 @@ class TesterMultimodal(object):
         # Define network
         input_dim = 3
 
-        model_path = "saved_models/checkpoint-latest-best-pytorch-2.pth.tar"
+        model_path = "saved_models/Batch-8/DeeplabV3Plus-Pascal-Pretrained-Batch-8-RGB.pth.tar"
         checkpoint = torch.load(model_path)
         
-        self.model = DeepLabMultiInput(num_classes=self.nclass,
-                        backbone=args.backbone,
-                        output_stride=args.out_stride,
-                        sync_bn=args.sync_bn,
-                        freeze_bn=args.freeze_bn,
-                        input_dim=input_dim,
-                        ratio=args.ratio,
-                        pretrained=args.use_pretrained_resnet)
+        self.model = DeepLab(num_classes=20,
+                    backbone=args.backbone,
+                    output_stride=args.out_stride,
+                    sync_bn=args.sync_bn,
+                    freeze_bn=args.freeze_bn)
 
         self.model.load_state_dict(checkpoint['state_dict'])
         self.model.cuda()
 
-        
-        
         # train_params = [{'params': model.get_1x_lr_params(), 'lr': args.lr},
         #                 {'params': model.get_10x_lr_params(), 'lr': args.lr * 10}]
         
@@ -189,7 +181,7 @@ class TesterMultimodal(object):
 
             with torch.cuda.amp.autocast():
                 with torch.no_grad():
-                    output = self.model(image, aolp, dolp, nir, mask)
+                    output = self.model(image)
                 loss = self.criterion(output, target, nir_mask)
             test_loss += loss.item()
             tbar.set_description('Test loss: %.3f' % (test_loss / (i + 1)))
@@ -215,6 +207,8 @@ class TesterMultimodal(object):
             this_mIoU = ev.Mean_Intersection_over_Union()
             this_FWIoU = ev.Frequency_Weighted_Intersection_over_Union()
             print(f"Image {i} IoU: {this_mIoU} and FWIoU: {this_FWIoU}")
+            mIoUs.append(this_mIoU)
+            FWIoUs.append(this_FWIoU)
 
             # Save the images
             # print(f"Output shape: {output.shape}, Target Shape: {target.shape}")
@@ -230,14 +224,15 @@ class TesterMultimodal(object):
             # cv2.imwrite(f'predictions/{i}-image.png', img)
             cv2.imwrite(f'predictions/{i}-target.png', t)
             cv2.imwrite(f'predictions/{i}-prediction.png', p)
+            cv2.imwrite(f'predictions/{i}-image.png', img)
 
-            out = output.data.cpu().numpy()[0]
-            # print(f"Out shape: {out.shape}, Type: {type(out)}")
-            for j in range(out.shape[0]):
-                filter = out[j, :, :].astype(int)
-                # print(f"Filter shape: {filter.shape}")
-                filter = filter.reshape(1024, 1024, 1)
-                cv2.imwrite(f'predictions/{i}-Filter-{j}.png', filter)
+            # out = output.data.cpu().numpy()[0]
+            # # print(f"Out shape: {out.shape}, Type: {type(out)}")
+            # for j in range(out.shape[0]):
+            #     filter = out[j, :, :].astype(int)
+            #     # print(f"Filter shape: {filter.shape}")
+            #     filter = filter.reshape(1024, 1024, 1)
+            #     cv2.imwrite(f'predictions/{i}-Filter-{j}.png', filter)
 
         # Fast test during the training
         Acc = self.evaluator.Pixel_Accuracy()
@@ -256,6 +251,8 @@ class TesterMultimodal(object):
         print('Test:')
         print('[Epoch: %d, numImages: %5d]' % (epoch, i * self.args.batch_size + image.data.shape[0]))
         print("Acc:{}, Acc_class:{}, mIoU:{}, fwIoU: {}".format(Acc, Acc_class, mIoU, FWIoU))
+        print("mIoUs:", mIoUs)
+        print("FWIoUs:", FWIoUs)
 
         # print(f"Output shape: {output.shape}, Target Shape: {target.shape}")
         # matplotlib.image.imsave(f'predictions/{i}-traget.png', target.cpu().numpy())
@@ -426,11 +423,13 @@ if __name__ == "__main__":
     # torch.backends.cudnn.deterministic = True
     # torch.backends.cudnn.benchmark = False
 
-    if args.is_multimodal:
-        print("USE Multimodal Model")
-        tester = TesterMultimodal(args)
-    else:
-        tester = TesterAdv(args)
+    tester = TesterMultimodal(args)
+
+    # if args.is_multimodal:
+    #     print("USE Multimodal Model")
+    #     tester = TesterMultimodal(args)
+    # else:
+    #     tester = TesterAdv(args)
     print('Starting Epoch:', tester.args.start_epoch)
     print('Total Epoches:', tester.args.epochs)
     tester.test()
