@@ -49,20 +49,32 @@ class TrainerMultimodal(object):
         #                 pretrained=args.use_pretrained_resnet,
         #                 num_modalities=self.num_modalities)
 
-        model = DeepLab(num_classes=21,
+        # model = DeepLab(num_classes=21,
+        #                 backbone=args.backbone,
+        #                 output_stride=args.out_stride,
+        #                 sync_bn=args.sync_bn,
+        #                 freeze_bn=args.freeze_bn)
+        
+        # # Load saved model
+        # # model_path = "saved_models/pretrained-deeplab-resnet.pth.tar"
+        # # checkpoint = torch.load(model_path)
+        # # model.load_state_dict(checkpoint['state_dict'], strict=False)
+
+        # # Replace the last layer
+        # model.decoder.last_conv[8] = nn.Conv2d(256, self.nclass, kernel_size=1, stride=1)
+
+        model = DeepFuseLab(num_classes=20,
                         backbone=args.backbone,
                         output_stride=args.out_stride,
                         sync_bn=args.sync_bn,
-                        freeze_bn=args.freeze_bn)
-        
-        # Load saved model
-        # model_path = "saved_models/pretrained-deeplab-resnet.pth.tar"
-        # checkpoint = torch.load(model_path)
-        # model.load_state_dict(checkpoint['state_dict'], strict=False)
+                        freeze_bn=args.freeze_bn,
+                        use_nir=args.use_nir,
+                        use_aolp=args.use_aolp,
+                        use_dolp=args.use_dolp,
+                        use_segmap=args.use_segmap)
 
-        # Replace the last layer
-        # model.decoder.last_conv[8] = nn.Conv2d(256, self.nclass, kernel_size=1, stride=1)
-
+        print(model)
+                        
         train_params = [{'params': model.get_1x_lr_params(), 'lr': args.lr},
                         {'params': model.get_10x_lr_params(), 'lr': args.lr*10}]
         
@@ -139,6 +151,9 @@ class TrainerMultimodal(object):
             if len(nir.shape) != 4:  # avoide automatic squeeze in later version of pytorch data loading
                 nir = nir.unsqueeze(1)
                 # print(nir.shape)
+            if len(mask.shape) != 4:  # avoide automatic squeeze in later version of pytorch data loading
+                mask = mask.unsqueeze(1)
+                # print(nir.shape)
             # ------------------ My Modification End --------------------------
 
             if self.args.cuda:
@@ -148,12 +163,13 @@ class TrainerMultimodal(object):
             aolp = aolp if self.args.use_aolp else None
             dolp = dolp if self.args.use_dolp else None
             nir  = nir  if self.args.use_nir else None
-            nir_mask = nir_mask  if self.args.use_nir else None            
+            segmap = mask if self.args.use_segmap else None
+            nir_mask = nir_mask if self.args.use_nir else None            
             
             with torch.cuda.amp.autocast():
                 # output = self.model(image, nir, aolp, dolp)
                 # print("Training: ", image.shape, " >==> ", output.shape)
-                output = self.model(image)
+                output = self.model(image, nir=nir, aolp=aolp, dolp=dolp, segmap=segmap)
                 loss = self.criterion(output, target, nir_mask)
             scaler.scale(loss).backward()
             scaler.step(self.optimizer)
@@ -228,18 +244,22 @@ class TrainerMultimodal(object):
             if len(nir.shape) != 4:  # avoide automatic squeeze in later version of pytorch data loading
                 nir = nir.unsqueeze(1)
                 # print(nir.shape)
+            if len(mask.shape) != 4:  # avoide automatic squeeze in later version of pytorch data loading
+                mask = mask.unsqueeze(1)
+                # print(nir.shape)
             # ------------------ My Modification End --------------------------
 
             aolp = aolp if self.args.use_aolp else None
             dolp = dolp if self.args.use_dolp else None
             nir  = nir  if self.args.use_nir else None
+            segmap = mask if self.args.use_segmap else None
             nir_mask = nir_mask  if self.args.use_nir else None  
 
             with torch.cuda.amp.autocast():
                 with torch.no_grad():
                     # output = self.model(image, nir, aolp, dolp)
                     # print("Validation: ", image.shape, " >==> ", output.shape)
-                    output = self.model(image)
+                    output = self.model(image, nir=nir, aolp=aolp, dolp=dolp, segmap=segmap)
                     
                 loss = self.criterion(output, target, nir_mask)
             test_loss += loss.item()
@@ -316,18 +336,22 @@ class TrainerMultimodal(object):
             if len(nir.shape) != 4:  # avoide automatic squeeze in later version of pytorch data loading
                 nir = nir.unsqueeze(1)
                 # print(nir.shape)
+            if len(mask.shape) != 4:  # avoide automatic squeeze in later version of pytorch data loading
+                mask = mask.unsqueeze(1)
+                # print(nir.shape)
             # ------------------ My Modification End --------------------------
 
             aolp = aolp if self.args.use_aolp else None
             dolp = dolp if self.args.use_dolp else None
             nir  = nir  if self.args.use_nir else None
+            segmap = mask if self.args.use_segmap else None
             nir_mask = nir_mask  if self.args.use_nir else None  
 
             with torch.cuda.amp.autocast():
                 with torch.no_grad():
                     # output = self.model(image, nir, aolp, dolp)
                     # print("Test: ", image.shape, " >==> ", output.shape)
-                    output = self.model(image)
+                    output = self.model(image, nir=nir, aolp=aolp, dolp=dolp, segmap=segmap)
                 loss = self.criterion(output, target, nir_mask)
             test_loss += loss.item()
             tbar.set_description('Test loss: %.3f' % (test_loss / (i + 1)))
@@ -461,6 +485,8 @@ if __name__ == "__main__":
                         help='use dolp')
     parser.add_argument('--use-nir', action='store_true', default=False,
                         help='use nir')
+    parser.add_argument('--use-segmap', action='store_true', default=False,
+                        help='use segmap')
     parser.add_argument('--use-pretrained-resnet', action='store_true', default=False,
                         help='use pretrained resnet101')
     parser.add_argument('--list-folder', type=str, default='list_folder1')

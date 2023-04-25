@@ -51,7 +51,7 @@ class MultimodalDatasetSegmentation(Dataset):
         self.nirs       = []
         self.nir_masks  = []
         self.categories = []
-        self.mask = []
+        self.mask       = []
 
 
         for splt in self.split:
@@ -68,7 +68,7 @@ class MultimodalDatasetSegmentation(Dataset):
                 _dolp     = os.path.join(self._dolp_dir     , line + ".npy")
                 _nir      = os.path.join(self._nir_dir      , line + ".png")
                 _nir_mask = os.path.join(self._nir_mask_dir , line + ".png")
-                _mask=os.path.join(self._mask_dir      , line + ".png")
+                _mask     = os.path.join(self._mask_dir     , line + ".png")
                 
                 if not os.path.isfile(_image):
                     continue
