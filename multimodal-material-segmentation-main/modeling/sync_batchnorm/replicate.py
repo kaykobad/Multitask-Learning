@@ -74,15 +74,20 @@ def patch_replication_callback(data_parallel):
         > sync_bn = SynchronizedBatchNorm1d(10, eps=1e-5, affine=False)
         > sync_bn = DataParallelWithCallback(sync_bn, device_ids=[0, 1])
     """
-
+    # print("Insaide Replica 1")
     assert isinstance(data_parallel, DataParallel)
+    # print("Insaide Replica 2")
 
     old_replicate = data_parallel.replicate
+    # print("Insaide Replica 3")
 
     @functools.wraps(old_replicate)
     def new_replicate(module, device_ids):
+        # print("Insaide Replica 4")
         modules = old_replicate(module, device_ids)
+        # print("Insaide Replica 5")
         execute_replication_callbacks(modules)
+        # print("Insaide Replica 6")
         return modules
-
+    # print("Insaide Replica 7")
     data_parallel.replicate = new_replicate

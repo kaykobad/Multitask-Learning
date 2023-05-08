@@ -91,8 +91,20 @@ class TesterMultimodal(object):
                     sync_bn=args.sync_bn,
                     freeze_bn=args.freeze_bn)
 
+        # self.model = DeepFuseLab(num_classes=20,
+        #                 backbone=args.backbone,
+        #                 output_stride=args.out_stride,
+        #                 sync_bn=args.sync_bn,
+        #                 freeze_bn=args.freeze_bn,
+        #                 use_nir=args.use_nir,
+        #                 use_aolp=args.use_aolp,
+        #                 use_dolp=args.use_dolp,
+        #                 use_segmap=args.use_segmap)
+
         self.model.load_state_dict(checkpoint['state_dict'])
         self.model.cuda()
+        pytorch_total_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        print(pytorch_total_params)
 
         # train_params = [{'params': model.get_1x_lr_params(), 'lr': args.lr},
         #                 {'params': model.get_10x_lr_params(), 'lr': args.lr * 10}]
@@ -169,19 +181,23 @@ class TesterMultimodal(object):
                 sample['u_map'], sample['v_map'], sample['mask']
             if self.args.cuda:
                 image, target, aolp, dolp, nir, nir_mask, u_map, v_map, mask = image.cuda(), target.cuda(), aolp.cuda(), dolp.cuda(), nir.cuda(), nir_mask.cuda(), u_map.cuda(), v_map.cuda(), mask.cuda()
-            aolp = aolp if self.args.use_aolp else None
-            dolp = dolp if self.args.use_dolp else None
-            nir  = nir  if self.args.use_nir else None
-            nir_mask = nir_mask  if self.args.use_nir else None
 
             if len(dolp.shape) != 4:  # avoide automatic squeeze in later version of pytorch data loading
                 dolp = dolp.unsqueeze(1)
             if len(nir.shape) != 4:  # avoide automatic squeeze in later version of pytorch data loading
                 nir = nir.unsqueeze(1)
+            if len(mask.shape) != 4:  # avoide automatic squeeze in later version of pytorch data loading
+                mask = mask.unsqueeze(1)
+
+            aolp = aolp if self.args.use_aolp else None
+            dolp = dolp if self.args.use_dolp else None
+            nir  = nir  if self.args.use_nir else None
+            segmap = mask if self.args.use_segmap else None
+            nir_mask = nir_mask  if self.args.use_nir else None
 
             with torch.cuda.amp.autocast():
                 with torch.no_grad():
-                    output = self.model(image)
+                    output = self.model(image, nir=nir, aolp=aolp, dolp=dolp, segmap=segmap)
                 loss = self.criterion(output, target, nir_mask)
             test_loss += loss.item()
             tbar.set_description('Test loss: %.3f' % (test_loss / (i + 1)))
@@ -222,9 +238,9 @@ class TesterMultimodal(object):
             # matplotlib.image.imsave(f'predictions/{i}-traget.png', t)
             # matplotlib.image.imsave(f'predictions/{i}-prediction.png', o)
             # cv2.imwrite(f'predictions/{i}-image.png', img)
-            cv2.imwrite(f'predictions/{i}-target.png', t)
-            cv2.imwrite(f'predictions/{i}-prediction.png', p)
-            cv2.imwrite(f'predictions/{i}-image.png', img)
+            # cv2.imwrite(f'predictions/{i}-target.png', t)
+            cv2.imwrite(f'predictions/{i}-prediction-RGB+Segmap.png', p)
+            # cv2.imwrite(f'predictions/{i}-image.png', img)
 
             # out = output.data.cpu().numpy()[0]
             # # print(f"Out shape: {out.shape}, Type: {type(out)}")
@@ -361,6 +377,8 @@ if __name__ == "__main__":
                         help='use dolp')
     parser.add_argument('--use-nir', action='store_true', default=False,
                         help='use nir')
+    parser.add_argument('--use-segmap', action='store_true', default=False,
+                        help='use segmap')
     parser.add_argument('--use-pretrained-resnet', action='store_true', default=False,
                         help='use pretrained resnet101')
     parser.add_argument('--list-folder', type=str, default='list_folder1')
@@ -424,6 +442,7 @@ if __name__ == "__main__":
     # torch.backends.cudnn.benchmark = False
 
     tester = TesterMultimodal(args)
+    exit
 
     # if args.is_multimodal:
     #     print("USE Multimodal Model")

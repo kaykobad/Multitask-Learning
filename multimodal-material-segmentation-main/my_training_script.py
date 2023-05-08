@@ -63,7 +63,28 @@ class TrainerMultimodal(object):
         # # Replace the last layer
         # model.decoder.last_conv[8] = nn.Conv2d(256, self.nclass, kernel_size=1, stride=1)
 
-        model = DeepFuseLab(num_classes=20,
+        # model = DeepFuseLab(num_classes=20,
+        #                 backbone=args.backbone,
+        #                 output_stride=args.out_stride,
+        #                 sync_bn=args.sync_bn,
+        #                 freeze_bn=args.freeze_bn,
+        #                 use_nir=args.use_nir,
+        #                 use_aolp=args.use_aolp,
+        #                 use_dolp=args.use_dolp,
+        #                 use_segmap=args.use_segmap)
+
+        # model = MMDeepLab(num_classes=20,
+        #                 backbone=args.backbone,
+        #                 output_stride=args.out_stride,
+        #                 sync_bn=args.sync_bn,
+        #                 freeze_bn=args.freeze_bn,
+        #                 use_nir=args.use_nir,
+        #                 use_aolp=args.use_aolp,
+        #                 use_dolp=args.use_dolp,
+        #                 use_segmap=args.use_segmap,
+        #                 enable_se=args.enable_se)
+
+        model = MMDeepLab2(num_classes=20,
                         backbone=args.backbone,
                         output_stride=args.out_stride,
                         sync_bn=args.sync_bn,
@@ -71,7 +92,8 @@ class TrainerMultimodal(object):
                         use_nir=args.use_nir,
                         use_aolp=args.use_aolp,
                         use_dolp=args.use_dolp,
-                        use_segmap=args.use_segmap)
+                        use_segmap=args.use_segmap,
+                        enable_se=args.enable_se)
 
         print(model)
                         
@@ -109,12 +131,17 @@ class TrainerMultimodal(object):
             print("Total GPU Available: ", torch.cuda.device_count())
             self.model = torch.nn.DataParallel(self.model, device_ids=self.args.gpu_ids)
             #self.mask_model = torch.nn.DataParallel(self.mask_model, device_ids=self.args.gpu_ids)
-            patch_replication_callback(self.model)
+            # print("Before Replica")
+            # patch_replication_callback(self.model)
+            # print("After Replica")
             self.model = self.model.cuda()
             
 
         # Resuming checkpoint
         self.best_pred = 0.0
+        self.best_pred_2 = 0.0
+        print("Newer version running...")
+        
         if args.resume is not None:
             if not os.path.isfile(args.resume):
                 raise RuntimeError("=> no checkpoint found at '{}'" .format(args.resume))
@@ -394,6 +421,17 @@ class TrainerMultimodal(object):
         print("Acc:{}, Acc_class:{}, mIoU:{}, fwIoU: {}".format(Acc, Acc_class, mIoU, FWIoU))
         print('Loss: %.3f' % test_loss)
 
+        new_pred = mIoU
+        if new_pred > self.best_pred_2:
+            is_best = True
+            self.best_pred_2 = new_pred
+            self.saver.save_checkpoint({
+                'epoch': epoch + 1,
+                'state_dict': self.model.module.state_dict(),
+                'optimizer': self.optimizer.state_dict(),
+                'best_pred': self.best_pred,
+            }, is_best, filename=f"{args.model_name}_best_test.pth.tar")
+
         # -------------------- My Modification Start ----------------------
         return log_data
         # -------------------- My Modification End ----------------------
@@ -487,6 +525,8 @@ if __name__ == "__main__":
                         help='use nir')
     parser.add_argument('--use-segmap', action='store_true', default=False,
                         help='use segmap')
+    parser.add_argument('--enable-se', action='store_true', default=False,
+                        help='use se block on decoder')
     parser.add_argument('--use-pretrained-resnet', action='store_true', default=False,
                         help='use pretrained resnet101')
     parser.add_argument('--list-folder', type=str, default='list_folder1')

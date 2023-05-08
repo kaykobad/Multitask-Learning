@@ -11,6 +11,24 @@ import torch.utils.model_zoo as model_zoo
 from modeling.sync_batchnorm.batchnorm import SynchronizedBatchNorm2d
 
 
+class SELayer(nn.Module):
+    def __init__(self, channel, reduction=16):
+        super(SELayer, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(channel, channel // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(channel // reduction, channel, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        y = self.avg_pool(x).view(b, c)
+        y = self.fc(y).view(b, c, 1, 1)
+        return x * y.expand_as(x)
+
+
 class Bottleneck(nn.Module):
     expansion = 4
 
@@ -515,13 +533,18 @@ def build_aspp(backbone, output_stride, BatchNorm):
 
 
 class Decoder(nn.Module):
-    def __init__(self, num_classes, backbone, BatchNorm, num_modalities=1):
+    def __init__(self, num_classes, backbone, BatchNorm, num_modalities=1, enable_se=False):
         super(Decoder, self).__init__()
         if backbone == 'resnet' or backbone == 'drn':
             low_level_inplanes = 256 * num_modalities
             last_conv_input = 48 + 256 * num_modalities
         else:
             raise NotImplementedError
+
+        self.enable_se  = enable_se
+
+        if self.enable_se:
+            self.se = SELayer(last_conv_input)
 
         self.conv1 = nn.Conv2d(low_level_inplanes, 48, 1, bias=False)
         self.bn1 = BatchNorm(48)
@@ -545,6 +568,10 @@ class Decoder(nn.Module):
 
         x = F.interpolate(x, size=low_level_feat.size()[2:], mode='bilinear', align_corners=True)
         x = torch.cat((x, low_level_feat), dim=1)
+
+        if self.enable_se:
+            x = self.se(x)
+
         x = self.last_conv(x)
 
         return x
@@ -560,8 +587,8 @@ class Decoder(nn.Module):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
 
-def build_decoder(num_classes, backbone, BatchNorm, num_modalities=1):
-    return Decoder(num_classes, backbone, BatchNorm, num_modalities)
+def build_decoder(num_classes, backbone, BatchNorm, num_modalities=1, enable_se=False):
+    return Decoder(num_classes, backbone, BatchNorm, num_modalities, enable_se)
 
 
 class DeepLab(nn.Module):
@@ -733,6 +760,308 @@ class DeepFuseLab(nn.Module):
         x = self.rgb_aspp(x)
         for f in final_features:
             x += f
+        x = self.decoder(x, low_level_feat)
+        x = F.interpolate(x, size=rgb.size()[2:], mode='bilinear', align_corners=True)
+
+        return x
+
+    def freeze_bn(self):
+        for m in self.modules():
+            if isinstance(m, SynchronizedBatchNorm2d):
+                m.eval()
+            elif isinstance(m, nn.BatchNorm2d):
+                m.eval()
+
+    def get_1x_lr_params(self):
+        modules = self.backbones
+        for i in range(len(modules)):
+            for m in modules[i].named_modules():
+                if self.freeze_bn:
+                    if isinstance(m[1], nn.Conv2d):
+                        for p in m[1].parameters():
+                            if p.requires_grad:
+                                yield p
+                else:
+                    if isinstance(m[1], nn.Conv2d) or isinstance(m[1], SynchronizedBatchNorm2d) \
+                            or isinstance(m[1], nn.BatchNorm2d):
+                        for p in m[1].parameters():
+                            if p.requires_grad:
+                                yield p
+
+    def get_10x_lr_params(self):
+        modules = self.decoders
+        for i in range(len(modules)):
+            for m in modules[i].named_modules():
+                if self.freeze_bn:
+                    if isinstance(m[1], nn.Conv2d):
+                        for p in m[1].parameters():
+                            if p.requires_grad:
+                                yield p
+                else:
+                    if isinstance(m[1], nn.Conv2d) or isinstance(m[1], SynchronizedBatchNorm2d) \
+                            or isinstance(m[1], nn.BatchNorm2d):
+                        for p in m[1].parameters():
+                            if p.requires_grad:
+                                yield p
+
+
+class MMDeepLab(nn.Module):
+    def __init__(self, 
+        backbone='resnet', 
+        output_stride=16, 
+        num_classes=20,      
+        sync_bn=True, 
+        freeze_bn=False,
+        use_nir=False,
+        use_aolp=False,
+        use_dolp=False,
+        use_segmap=False,
+        enable_se= False,
+    ): 
+        super(MMDeepLab, self).__init__()
+        self.use_nir = use_nir
+        self.use_aolp = use_aolp
+        self.use_dolp = use_dolp
+        self.use_segmap = use_segmap
+        self.enable_se = enable_se
+        self.freeze_bn = freeze_bn
+
+        self.backbones = []
+        self.decoders = []
+        self.num_modalities = 1
+
+        if backbone == 'drn':
+            output_stride = 8
+
+        if sync_bn == True:
+            BatchNorm = SynchronizedBatchNorm2d
+        else:
+            BatchNorm = nn.BatchNorm2d
+
+        self.rgb_backbone = build_backbone(backbone, output_stride, BatchNorm)
+        self.rgb_aspp = build_aspp(backbone, output_stride, BatchNorm)
+        self.backbones.append(self.rgb_backbone)
+        self.decoders.append(self.rgb_aspp)
+
+        if self.use_nir:
+            self.num_modalities += 1
+            self.nir_backbone = build_backbone(backbone, output_stride, BatchNorm, input_dim=1, pretrained=False)
+            self.nir_aspp = build_aspp(backbone, output_stride, BatchNorm)
+            self.backbones.append(self.nir_backbone)
+            self.decoders.append(self.nir_aspp)
+        if self.use_aolp:
+            self.num_modalities += 1
+            self.aolp_backbone = build_backbone(backbone, output_stride, BatchNorm, input_dim=2, pretrained=False)
+            self.aolp_aspp = build_aspp(backbone, output_stride, BatchNorm)
+            self.backbones.append(self.aolp_backbone)
+            self.decoders.append(self.aolp_aspp)
+        if self.use_dolp:
+            self.num_modalities += 1
+            self.dolp_backbone = build_backbone(backbone, output_stride, BatchNorm, input_dim=1, pretrained=False)
+            self.dolp_aspp = build_aspp(backbone, output_stride, BatchNorm)
+            self.backbones.append(self.dolp_backbone)
+            self.decoders.append(self.dolp_aspp)
+        # if self.use_segmap:
+        #     self.segmap_backbone = build_custom_resnet_backbone(1, output_stride, BatchNorm, input_dim=1, pretrained=False)
+        #     self.segmap_aspp = build_aspp(backbone, output_stride, BatchNorm)
+        #     self.backbones.append(self.segmap_backbone)
+        #     self.decoders.append(self.segmap_aspp)
+
+        self.decoder = build_decoder(num_classes, backbone, BatchNorm, num_modalities=self.num_modalities, enable_se=self.enable_se)
+        self.decoders.append(self.decoder)
+
+    def forward(self, rgb, nir=None, aolp=None, dolp=None, segmap=None):
+        x1, low_level_feat1 = self.rgb_backbone(rgb)
+        x1 = self.rgb_aspp(x1)
+        x = [x1]
+        low_level_feat = [low_level_feat1]
+
+        if self.use_nir and nir is not None:
+            x2, low_level_feat2 = self.nir_backbone(nir)
+            x2 = self.nir_aspp(x2)
+            x.append(x2)
+            low_level_feat.append(low_level_feat2)
+        if self.use_aolp and aolp is not None:
+            x3, low_level_feat3 = self.aolp_backbone(aolp)
+            x3 = self.aolp_aspp(x3)
+            x.append(x3)
+            low_level_feat.append(low_level_feat3)
+        if self.use_dolp and dolp is not None:
+            x4, low_level_feat4 = self.dolp_backbone(dolp)
+            x4 = self.dolp_aspp(x4)
+            x.append(x4)
+            low_level_feat.append(low_level_feat4)
+
+        if self.num_modalities == 1:
+            x = x1
+            low_level_feat = low_level_feat1
+        else:
+            x = torch.cat(x, dim=1)
+            low_level_feat = torch.cat(low_level_feat, dim=1) 
+
+        # print("X1 and X shape:", x1.shape, x.shape)
+        # print("low_level_feat1 and low_level_feat shape:", low_level_feat1.shape, low_level_feat.shape)
+
+        x = self.decoder(x, low_level_feat)
+        x = F.interpolate(x, size=rgb.size()[2:], mode='bilinear', align_corners=True)
+
+        return x
+
+    def freeze_bn(self):
+        for m in self.modules():
+            if isinstance(m, SynchronizedBatchNorm2d):
+                m.eval()
+            elif isinstance(m, nn.BatchNorm2d):
+                m.eval()
+
+    def get_1x_lr_params(self):
+        modules = self.backbones
+        for i in range(len(modules)):
+            for m in modules[i].named_modules():
+                if self.freeze_bn:
+                    if isinstance(m[1], nn.Conv2d):
+                        for p in m[1].parameters():
+                            if p.requires_grad:
+                                yield p
+                else:
+                    if isinstance(m[1], nn.Conv2d) or isinstance(m[1], SynchronizedBatchNorm2d) \
+                            or isinstance(m[1], nn.BatchNorm2d):
+                        for p in m[1].parameters():
+                            if p.requires_grad:
+                                yield p
+
+    def get_10x_lr_params(self):
+        modules = self.decoders
+        for i in range(len(modules)):
+            for m in modules[i].named_modules():
+                if self.freeze_bn:
+                    if isinstance(m[1], nn.Conv2d):
+                        for p in m[1].parameters():
+                            if p.requires_grad:
+                                yield p
+                else:
+                    if isinstance(m[1], nn.Conv2d) or isinstance(m[1], SynchronizedBatchNorm2d) \
+                            or isinstance(m[1], nn.BatchNorm2d):
+                        for p in m[1].parameters():
+                            if p.requires_grad:
+                                yield p
+
+
+class MMDeepLab2(nn.Module):
+    def __init__(self, 
+        backbone='resnet', 
+        output_stride=16, 
+        num_classes=20,      
+        sync_bn=True, 
+        freeze_bn=False,
+        use_nir=False,
+        use_aolp=False,
+        use_dolp=False,
+        use_segmap=False,
+        enable_se= False,
+    ): 
+        super(MMDeepLab2, self).__init__()
+        self.use_nir = use_nir
+        self.use_aolp = use_aolp
+        self.use_dolp = use_dolp
+        self.use_segmap = use_segmap
+        self.enable_se = enable_se
+        self.freeze_bn = freeze_bn
+
+        self.backbones = []
+        self.decoders = []
+        self.num_modalities = 1
+
+        if backbone == 'drn':
+            output_stride = 8
+
+        if sync_bn == True:
+            BatchNorm = SynchronizedBatchNorm2d
+        else:
+            BatchNorm = nn.BatchNorm2d
+
+        self.rgb_backbone = build_backbone(backbone, output_stride, BatchNorm)
+        self.rgb_aspp = build_aspp(backbone, output_stride, BatchNorm)
+        self.rgb_se_llf = SELayer(256)
+        self.rgb_se_hlf = SELayer(256)
+        self.backbones.extend([self.rgb_backbone, self.rgb_se_llf, self.rgb_se_hlf])
+        self.decoders.append(self.rgb_aspp)
+
+        if self.use_nir:
+            self.num_modalities += 1
+            self.nir_backbone = build_backbone(backbone, output_stride, BatchNorm, input_dim=1, pretrained=False)
+            self.nir_aspp = build_aspp(backbone, output_stride, BatchNorm)
+            self.nir_se_llf = SELayer(256)
+            self.nir_se_hlf = SELayer(256)
+            self.backbones.extend([self.nir_backbone, self.nir_se_llf, self.nir_se_hlf])
+            self.decoders.append(self.nir_aspp)
+        if self.use_aolp:
+            self.num_modalities += 1
+            self.aolp_backbone = build_backbone(backbone, output_stride, BatchNorm, input_dim=2, pretrained=False)
+            self.aolp_aspp = build_aspp(backbone, output_stride, BatchNorm)
+            self.aolp_se_llf = SELayer(256)
+            self.aolp_se_hlf = SELayer(256)
+            self.backbones.extend([self.aolp_backbone, self.aolp_se_llf, self.aolp_se_hlf])
+            self.decoders.append(self.aolp_aspp)
+        if self.use_dolp:
+            self.num_modalities += 1
+            self.dolp_backbone = build_backbone(backbone, output_stride, BatchNorm, input_dim=1, pretrained=False)
+            self.dolp_aspp = build_aspp(backbone, output_stride, BatchNorm)
+            self.dolp_se_llf = SELayer(256)
+            self.dolp_se_hlf = SELayer(256)
+            self.backbones.extend([self.dolp_backbone, self.dolp_se_llf, self.dolp_se_hlf])
+            self.decoders.append(self.dolp_aspp)
+        # if self.use_segmap:
+        #     self.segmap_backbone = build_custom_resnet_backbone(1, output_stride, BatchNorm, input_dim=1, pretrained=False)
+        #     self.segmap_aspp = build_aspp(backbone, output_stride, BatchNorm)
+        #     self.backbones.append(self.segmap_backbone)
+        #     self.decoders.append(self.segmap_aspp)
+
+        self.decoder = build_decoder(num_classes, backbone, BatchNorm, num_modalities=self.num_modalities, enable_se=self.enable_se)
+        self.decoders.append(self.decoder)
+
+    def forward(self, rgb, nir=None, aolp=None, dolp=None, segmap=None):
+        x1, low_level_feat1 = self.rgb_backbone(rgb)
+        x1 = self.rgb_aspp(x1)
+        x1 = self.rgb_se_hlf(x1)
+        low_level_feat1 = self.rgb_se_llf(low_level_feat1)
+        # print("---------", x1.shape, low_level_feat1.shape)
+        # x1 = torch.Size([8, 256, 32, 32]),  low_level_feat1 = torch.Size([8, 256, 128, 128])
+        x = [x1]
+        low_level_feat = [low_level_feat1]
+
+        if self.use_nir and nir is not None:
+            x2, low_level_feat2 = self.nir_backbone(nir)
+            x2 = self.nir_aspp(x2)
+            x2 = self.nir_se_hlf(x2)
+            low_level_feat2 = self.nir_se_llf(low_level_feat2)
+            x.append(x2)
+            low_level_feat.append(low_level_feat2)
+        if self.use_aolp and aolp is not None:
+            x3, low_level_feat3 = self.aolp_backbone(aolp)
+            x3 = self.aolp_aspp(x3)
+            x3 = self.aolp_se_hlf(x3)
+            low_level_feat3 = self.aolp_se_llf(low_level_feat3)
+            x.append(x3)
+            low_level_feat.append(low_level_feat3)
+        if self.use_dolp and dolp is not None:
+            x4, low_level_feat4 = self.dolp_backbone(dolp)
+            x4 = self.dolp_aspp(x4)
+            x4 = self.dolp_se_hlf(x4)
+            low_level_feat4 = self.dolp_se_llf(low_level_feat4)
+            x.append(x4)
+            low_level_feat.append(low_level_feat4)
+
+        if self.num_modalities == 1:
+            x = x1
+            low_level_feat = low_level_feat1
+        else:
+            x = torch.cat(x, dim=1)
+            low_level_feat = torch.cat(low_level_feat, dim=1) 
+
+        # print("X1 and X shape:", x1.shape, x.shape)
+        # print("low_level_feat1 and low_level_feat shape:", low_level_feat1.shape, low_level_feat.shape)
+
         x = self.decoder(x, low_level_feat)
         x = F.interpolate(x, size=rgb.size()[2:], mode='bilinear', align_corners=True)
 
