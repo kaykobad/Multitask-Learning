@@ -1,5 +1,8 @@
 import argparse
 import os
+import dataloaders
+from dataloaders.datasets.multimodal_dataset_2 import MultimodalDatasetSegmentation
+from torch.utils.data import DataLoader
 import numpy as np
 from tqdm import tqdm
 import random
@@ -65,6 +68,20 @@ LABEL_COLORS_NEW_EN = {
     "#6b6ecf" : "water",        #17
     "#9c9ede" : "human body",   #18
     "#637939" : "sky"}          #19
+
+
+def make_data_loader(args, **kwargs):
+    # train_set = multimodal_dataset.MultimodalDatasetSegmentation(args, split='train')
+    # val_set = multimodal_dataset.MultimodalDatasetSegmentation(args, split='val')
+    test_set = MultimodalDatasetSegmentation(args, split='visualize')
+    # test_set = multimodal_dataset.MultimodalDatasetSegmentation(args, split='visualize')
+
+    num_class = 20
+    # train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, **kwargs)
+    # val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, **kwargs)
+    test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, **kwargs)
+
+    return 0, 0, test_loader, num_class
        
         
 class TesterMultimodal(object):
@@ -82,14 +99,14 @@ class TesterMultimodal(object):
         # Define network
         input_dim = 3
 
-        model_path = "saved_models/Batch-8/DeeplabV3Plus-Pascal-Pretrained-Batch-8-RGB.pth.tar"
+        model_path = "saved_models/MMDeepLab2/MMDeepLab2-Batch-8-RGB+AoLP+DoLP_best_test.pth.tar"
         checkpoint = torch.load(model_path)
         
-        self.model = DeepLab(num_classes=20,
-                    backbone=args.backbone,
-                    output_stride=args.out_stride,
-                    sync_bn=args.sync_bn,
-                    freeze_bn=args.freeze_bn)
+        # self.model = DeepLab(num_classes=20,
+        #             backbone=args.backbone,
+        #             output_stride=args.out_stride,
+        #             sync_bn=args.sync_bn,
+        #             freeze_bn=args.freeze_bn)
 
         # self.model = DeepFuseLab(num_classes=20,
         #                 backbone=args.backbone,
@@ -100,6 +117,28 @@ class TesterMultimodal(object):
         #                 use_aolp=args.use_aolp,
         #                 use_dolp=args.use_dolp,
         #                 use_segmap=args.use_segmap)
+
+        # self.model = MMDeepLab(num_classes=20,
+        #                 backbone=args.backbone,
+        #                 output_stride=args.out_stride,
+        #                 sync_bn=args.sync_bn,
+        #                 freeze_bn=args.freeze_bn,
+        #                 use_nir=args.use_nir,
+        #                 use_aolp=args.use_aolp,
+        #                 use_dolp=args.use_dolp,
+        #                 use_segmap=args.use_segmap,
+        #                 enable_se=args.enable_se)
+
+        self.model = MMDeepLab2(num_classes=20,
+                        backbone=args.backbone,
+                        output_stride=args.out_stride,
+                        sync_bn=args.sync_bn,
+                        freeze_bn=args.freeze_bn,
+                        use_nir=args.use_nir,
+                        use_aolp=args.use_aolp,
+                        use_dolp=args.use_dolp,
+                        use_segmap=args.use_segmap,
+                        enable_se=args.enable_se)
 
         self.model.load_state_dict(checkpoint['state_dict'])
         self.model.cuda()
@@ -197,6 +236,7 @@ class TesterMultimodal(object):
 
             with torch.cuda.amp.autocast():
                 with torch.no_grad():
+                    # output = self.model(image)
                     output = self.model(image, nir=nir, aolp=aolp, dolp=dolp, segmap=segmap)
                 loss = self.criterion(output, target, nir_mask)
             test_loss += loss.item()
@@ -239,7 +279,7 @@ class TesterMultimodal(object):
             # matplotlib.image.imsave(f'predictions/{i}-prediction.png', o)
             # cv2.imwrite(f'predictions/{i}-image.png', img)
             # cv2.imwrite(f'predictions/{i}-target.png', t)
-            cv2.imwrite(f'predictions/{i}-prediction-RGB+Segmap.png', p)
+            cv2.imwrite(f'predictions/MMDeepLab2/rgb+aolp+dolp/{i}-prediction.png', p)
             # cv2.imwrite(f'predictions/{i}-image.png', img)
 
             # out = output.data.cpu().numpy()[0]
@@ -384,6 +424,8 @@ if __name__ == "__main__":
     parser.add_argument('--list-folder', type=str, default='list_folder1')
     parser.add_argument('--is-multimodal', action='store_true', default=False,
                         help='use multihead architecture')
+    parser.add_argument('--enable-se', action='store_true', default=False,
+                        help='use se block on decoder')
     parser.add_argument('--pth-path', type=str, default=None,
                         help='set the pth file path')
 

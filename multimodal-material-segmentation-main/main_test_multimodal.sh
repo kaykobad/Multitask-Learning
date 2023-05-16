@@ -13,4 +13,5 @@ CUDA_VISIBLE_DEVICES=0 python test.py \
   --list-folder list_folder \
   --use-pretrained-resnet \
   --is-multimodal \
-  --use-segmap 
+  --use-dolp \
+  --use-aolp

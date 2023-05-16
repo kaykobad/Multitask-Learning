@@ -84,7 +84,29 @@ class TrainerMultimodal(object):
         #                 use_segmap=args.use_segmap,
         #                 enable_se=args.enable_se)
 
-        model = MMDeepLab2(num_classes=20,
+        # model = MMDeepLab2(num_classes=20,
+        #                 backbone=args.backbone,
+        #                 output_stride=args.out_stride,
+        #                 sync_bn=args.sync_bn,
+        #                 freeze_bn=args.freeze_bn,
+        #                 use_nir=args.use_nir,
+        #                 use_aolp=args.use_aolp,
+        #                 use_dolp=args.use_dolp,
+        #                 use_segmap=args.use_segmap,
+        #                 enable_se=args.enable_se)
+        
+        # model = MMDeepLabResSE(num_classes=20,
+        #                 backbone=args.backbone,
+        #                 output_stride=args.out_stride,
+        #                 sync_bn=args.sync_bn,
+        #                 freeze_bn=args.freeze_bn,
+        #                 use_nir=args.use_nir,
+        #                 use_aolp=args.use_aolp,
+        #                 use_dolp=args.use_dolp,
+        #                 use_segmap=args.use_segmap,
+        #                 enable_se=args.enable_se)
+
+        model = MMDeepLabAD(num_classes=20,
                         backbone=args.backbone,
                         output_stride=args.out_stride,
                         sync_bn=args.sync_bn,
@@ -94,6 +116,17 @@ class TrainerMultimodal(object):
                         use_dolp=args.use_dolp,
                         use_segmap=args.use_segmap,
                         enable_se=args.enable_se)
+
+        # model = MMDeepLabResSEAD(num_classes=20,
+        #                 backbone=args.backbone,
+        #                 output_stride=args.out_stride,
+        #                 sync_bn=args.sync_bn,
+        #                 freeze_bn=args.freeze_bn,
+        #                 use_nir=args.use_nir,
+        #                 use_aolp=args.use_aolp,
+        #                 use_dolp=args.use_dolp,
+        #                 use_segmap=args.use_segmap,
+        #                 enable_se=args.enable_se)
 
         print(model)
                         

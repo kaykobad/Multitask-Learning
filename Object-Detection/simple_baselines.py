@@ -12,7 +12,7 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 from my_models.resnet_models import ClassifierType, ResNet18, MultiModalResNet18, MultiModalResNet18SharedBackbone
 from my_models.se_resnet_models import SeResNet18, SeResNet50, SeResNet101, MultiModalSeResNet18, MultiModalSeResNet18SharedBackbone, MultiModalSeResNet50SharedBackbone, MultiModalSeResNet50
-from custom_dataset import PbvsDataset
+from custom_dataset import PbvsDataset, PbvsTestDataset
 from pytorch_metric_learning import losses
 
 
@@ -31,14 +31,14 @@ print("Device:", device, torch.cuda.device_count())
 # Global Variables
 should_init_wandb = True
 enable_wandb_logging = True
-enable_sup_con_loss = False
-shared_backbone = False
+enable_sup_con_loss = True
+shared_backbone = True
 use_pretrained_model = False
 
-wandb_name = "EO-SR50-CE"
+wandb_name = "EOSAR-SharedBB-SR18-Mul-CE+SupConP"
 model_name = wandb_name
-classifier_type = ClassifierType.mlp
-backbone = BackBoneType.se_resnet50
+classifier_type = ClassifierType.linear
+backbone = BackBoneType.se_resnet18
 
 num_classes = 10
 batch_size = 64
@@ -55,6 +55,8 @@ train_EO_dir = train_dir + "EO/"
 train_SAR_dir = train_dir + "SAR/"
 validation_EO_dir = validation_dir + "EO/"
 validation_SAR_dir = validation_dir + "SAR/"
+
+original_validation_data_path = "dataset/2022/validation/"
 
 # wandb init
 if should_init_wandb:
@@ -103,10 +105,18 @@ def log_wandb(wandb_data):
 
 def load_train_data(data_path, multimodal=False):
     # Convert images to tensors, normalize, and resize them
+    # transform = transforms.Compose([
+    #     transforms.Resize(224),
+    #     transforms.ToTensor(),
+    #     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+    # ])
+
     transform = transforms.Compose([
-        transforms.Resize(224),
+        transforms.Resize(256),
+        transforms.RandomResizedCrop(224),
+        transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
     ])
 
     if multimodal:
@@ -123,10 +133,17 @@ def load_train_data(data_path, multimodal=False):
 
 
 def load_test_data(data_path, multimodal=False):
+    # transform = transforms.Compose([
+    #     transforms.Resize(224),
+    #     transforms.ToTensor(),
+    #     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+    # ])
+
     transform = transforms.Compose([
-        transforms.Resize(224),
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
         transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+        transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225)),
     ])
 
     if multimodal:
@@ -142,44 +159,44 @@ def load_test_data(data_path, multimodal=False):
     return test_data_loader, test_data
 
 
-def load_data(data_path):
-    transform = transforms.Compose([
-        transforms.Resize(224),
-        transforms.ToTensor(),
-        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-    ])
+# def load_data(data_path):
+#     transform = transforms.Compose([
+#         transforms.Resize(224),
+#         transforms.ToTensor(),
+#         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+#     ])
 
-    # Stratified Sampling for train and val
-    dataset = torchvision.datasets.ImageFolder(root=data_path, transform=transform)
-    train_idx, valid_idx = train_test_split(
-        np.arange(len(dataset)),
-        test_size=0.2,
-        random_state=random_state,
-        shuffle=True,
-        stratify=dataset.targets,
-    )
+#     # Stratified Sampling for train and val
+#     dataset = torchvision.datasets.ImageFolder(root=data_path, transform=transform)
+#     train_idx, valid_idx = train_test_split(
+#         np.arange(len(dataset)),
+#         test_size=0.2,
+#         random_state=random_state,
+#         shuffle=True,
+#         stratify=dataset.targets,
+#     )
 
-    # Subset dataset for train and val
-    train_dataset = data.Subset(dataset, train_idx)
-    validation_dataset = data.Subset(dataset, valid_idx)
+#     # Subset dataset for train and val
+#     train_dataset = data.Subset(dataset, train_idx)
+#     validation_dataset = data.Subset(dataset, valid_idx)
 
-    # test_data_loader = data.DataLoader(test_data, batch_size=batch_size, shuffle=True, num_workers=args.num_workers)
-    # Dataloader for train and val
-    train_loader = data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    validation_loader = data.DataLoader(validation_dataset, batch_size=batch_size, shuffle=False)
+#     # test_data_loader = data.DataLoader(test_data, batch_size=batch_size, shuffle=True, num_workers=args.num_workers)
+#     # Dataloader for train and val
+#     train_loader = data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+#     validation_loader = data.DataLoader(validation_dataset, batch_size=batch_size, shuffle=False)
 
-    # Print info
-    print(f"Total number of train samples: {len(train_dataset)}")
-    print(f"Total number of validation samples: {len(validation_dataset)}")
-    print(f"Total number of train batches: {len(train_loader)}")
-    print(f"Total number of validation batches: {len(validation_loader)}")
-    print()
-    # print(len(dataset), len(train_dataset), len(validation_dataset))
+#     # Print info
+#     print(f"Total number of train samples: {len(train_dataset)}")
+#     print(f"Total number of validation samples: {len(validation_dataset)}")
+#     print(f"Total number of train batches: {len(train_loader)}")
+#     print(f"Total number of validation batches: {len(validation_loader)}")
+#     print()
+#     # print(len(dataset), len(train_dataset), len(validation_dataset))
 
-    return train_loader, validation_loader
+#     return train_loader, validation_loader
 
 
-def weighted_random_sampling(dataset, num_samples=5000):
+def weighted_random_sampling(dataset, num_samples=6000):
     label_train = dataset.targets
     class_sample_count = np.array([len(np.where(label_train == t)[0]) for t in np.unique(label_train)])
     # print(class_sample_count)
@@ -328,7 +345,7 @@ def train_model(train_data_path, validation_data_path):
         log_wandb(log_data)
 
     print('Finished Training with best validation accuracy ' + str(best_accuracy))
-    torch.save(best_model, 'check_points/'+model_name+".pth")
+    torch.save(best_model, 'check_points/augmented_models/'+model_name+".pth")
 
 
 # My evaluation function
@@ -519,7 +536,7 @@ def train_multimodal_model(
         log_wandb(log_data)
 
     print('Finished Training with best validation accuracy ' + str(best_accuracy))
-    torch.save(best_model, 'check_points/'+model_name+".pth")
+    torch.save(best_model, 'check_points/augmented_models/'+model_name+".pth")
 
 
 # def train():
@@ -590,6 +607,48 @@ def train_multimodal_model(
 #             100 * correct / total))
 
 
+def generate_prediction(model_path, test_folder):
+    transform = transforms.Compose([
+        transforms.Resize(224),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+    ])
+    test_dataset = PbvsTestDataset(root=test_folder, transform=transform)
+    test_data_loader = data.DataLoader(test_dataset, batch_size=1, shuffle=False)
+
+    # Print info
+    print(f"Total number of test samples: {len(test_dataset)}")
+    print(f"Total number of test batches: {len(test_data_loader)}")
+
+    model = torch.load(model_path)
+    model.to(device)
+
+    correct = 0
+    total = 0
+
+    with tqdm(test_data_loader, unit="batch", desc="Predicting") as tepoch:
+        for eo, sar, image_id in tepoch:
+            eo, sar = eo.to(device), sar.to(device)
+            outputs, eo_feature, sar_feature = model(eo, sar)
+            predictions = outputs.argmax(dim=1, keepdim=True).squeeze()
+            garbage, predicted = torch.max(outputs.data, 1)
+            print(image_id[0], predicted[0])
+            # print(outputs)
+
+                
+    # with torch.no_grad():
+    #     for data in test_data:
+    #         images, labels = data
+    #         images, labels = images.to(device), labels.to(device)
+    #         outputs = model(images)
+    #         _, predicted = torch.max(outputs.data, 1)
+    #         total += labels.size(0)
+    #         correct += (predicted == labels).sum().item()
+
+    # print('Accuracy of the network on the ' + str(total) + ' test images: %d %%' % (
+    #         100 * correct / total))
+
+
 if __name__ == "__main__":
     # Set the random Seed
     np.random.seed(random_seed)
@@ -603,8 +662,9 @@ if __name__ == "__main__":
     # else:
     #     train()
     # load_data(EO_data_folder)
-    train_model(train_EO_dir, validation_EO_dir)
-    # train_multimodal_model(train_dir, validation_dir, type=fusion_type, classifier=classifier_type, hidden_dim=classifier_hidden_dim)
+    # generate_prediction("check_points/EOSAR-SR18-Mul+MLP2-H512-CE.pth", original_validation_data_path)
+    # train_model(train_EO_dir, validation_EO_dir)
+    train_multimodal_model(train_dir, validation_dir, type=fusion_type, classifier=classifier_type, hidden_dim=classifier_hidden_dim)
     # names = ["EOSAR-R18-Cat-BCE+SupCon", "EOSAR-R18-Add-BCE+SupCon", "EOSAR-R18-Mul-BCE+SupCon"]
     # for i in range(3):
     #     torch.cuda.empty_cache()
