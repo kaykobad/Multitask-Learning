@@ -1,0 +1,1 @@
+python ./datasets/combine_A_and_B.py --fold_A ./datasets/PBVS-23-Translations/design_data/A --fold_B ./datasets/PBVS-23-Translations/design_data/B --fold_AB ./datasets/PBVS-23-Data/

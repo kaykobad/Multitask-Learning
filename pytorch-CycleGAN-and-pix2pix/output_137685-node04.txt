@@ -1,0 +1,154 @@
+Setting up a new session...
+Traceback (most recent call last):
+  File "/home/csgrad/mreza/.local/lib/python3.9/site-packages/urllib3/connection.py", line 174, in _new_conn
+    conn = connection.create_connection(
+  File "/home/csgrad/mreza/.local/lib/python3.9/site-packages/urllib3/util/connection.py", line 95, in create_connection
+    raise err
+  File "/home/csgrad/mreza/.local/lib/python3.9/site-packages/urllib3/util/connection.py", line 85, in create_connection
+    sock.connect(sa)
+ConnectionRefusedError: [Errno 111] Connection refused
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/csgrad/mreza/.local/lib/python3.9/site-packages/urllib3/connectionpool.py", line 703, in urlopen
+    httplib_response = self._make_request(
+  File "/home/csgrad/mreza/.local/lib/python3.9/site-packages/urllib3/connectionpool.py", line 398, in _make_request
+    conn.request(method, url, **httplib_request_kw)
+  File "/home/csgrad/mreza/.local/lib/python3.9/site-packages/urllib3/connection.py", line 239, in request
+    super(HTTPConnection, self).request(method, url, body=body, headers=headers)
+  File "/home/csgrad/mreza/anaconda3/envs/pix2pix/lib/python3.9/http/client.py", line 1255, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+  File "/home/csgrad/mreza/anaconda3/envs/pix2pix/lib/python3.9/http/client.py", line 1301, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+  File "/home/csgrad/mreza/anaconda3/envs/pix2pix/lib/python3.9/http/client.py", line 1250, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+  File "/home/csgrad/mreza/anaconda3/envs/pix2pix/lib/python3.9/http/client.py", line 1010, in _send_output
+    self.send(msg)
+  File "/home/csgrad/mreza/anaconda3/envs/pix2pix/lib/python3.9/http/client.py", line 950, in send
+    self.connect()
+  File "/home/csgrad/mreza/.local/lib/python3.9/site-packages/urllib3/connection.py", line 205, in connect
+    conn = self._new_conn()
+  File "/home/csgrad/mreza/.local/lib/python3.9/site-packages/urllib3/connection.py", line 186, in _new_conn
+    raise NewConnectionError(
+urllib3.exceptions.NewConnectionError: <urllib3.connection.HTTPConnection object at 0x7ff0eaff1c10>: Failed to establish a new connection: [Errno 111] Connection refused
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/csgrad/mreza/anaconda3/envs/pix2pix/lib/python3.9/site-packages/requests/adapters.py", line 487, in send
+    resp = conn.urlopen(
+  File "/home/csgrad/mreza/.local/lib/python3.9/site-packages/urllib3/connectionpool.py", line 787, in urlopen
+    retries = retries.increment(
+  File "/home/csgrad/mreza/.local/lib/python3.9/site-packages/urllib3/util/retry.py", line 592, in increment
+    raise MaxRetryError(_pool, url, error or ResponseError(cause))
+urllib3.exceptions.MaxRetryError: HTTPConnectionPool(host='localhost', port=8097): Max retries exceeded with url: /env/main (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7ff0eaff1c10>: Failed to establish a new connection: [Errno 111] Connection refused'))
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/csgrad/mreza/.local/lib/python3.9/site-packages/visdom/__init__.py", line 692, in _send
+    return self._handle_post(
+  File "/home/csgrad/mreza/.local/lib/python3.9/site-packages/visdom/__init__.py", line 656, in _handle_post
+    r = self.session.post(url, data=data)
+  File "/home/csgrad/mreza/anaconda3/envs/pix2pix/lib/python3.9/site-packages/requests/sessions.py", line 635, in post
+    return self.request("POST", url, data=data, json=json, **kwargs)
+  File "/home/csgrad/mreza/anaconda3/envs/pix2pix/lib/python3.9/site-packages/requests/sessions.py", line 587, in request
+    resp = self.send(prep, **send_kwargs)
+  File "/home/csgrad/mreza/anaconda3/envs/pix2pix/lib/python3.9/site-packages/requests/sessions.py", line 701, in send
+    r = adapter.send(request, **kwargs)
+  File "/home/csgrad/mreza/anaconda3/envs/pix2pix/lib/python3.9/site-packages/requests/adapters.py", line 520, in send
+    raise ConnectionError(e, request=request)
+requests.exceptions.ConnectionError: HTTPConnectionPool(host='localhost', port=8097): Max retries exceeded with url: /env/main (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x7ff0eaff1c10>: Failed to establish a new connection: [Errno 111] Connection refused'))
+[Errno 111] Connection refused
+on_close() takes 1 positional argument but 3 were given
+wandb: Currently logged in as: kaykobadreza. Use `wandb login --relogin` to force relogin
+wandb: wandb version 0.15.0 is available!  To upgrade, please run:
+wandb:  $ pip install wandb --upgrade
+wandb: Tracking run with wandb version 0.13.4
+wandb: Run data is saved locally in /home/csgrad/mreza/Research/Multitask-Learning/pytorch-CycleGAN-and-pix2pix/wandb/run-20230502_015405-35upu4sr
+wandb: Run `wandb offline` to turn off syncing.
+wandb: Syncing run Sar2Eo-1
+wandb: ⭐️ View project at https://wandb.ai/kaykobadreza/SAR-2-EO-Translation
+wandb: 🚀 View run at https://wandb.ai/kaykobadreza/SAR-2-EO-Translation/runs/35upu4sr
+/home/csgrad/mreza/anaconda3/envs/pix2pix/lib/python3.9/site-packages/torch/optim/lr_scheduler.py:139: UserWarning: Detected call of `lr_scheduler.step()` before `optimizer.step()`. In PyTorch 1.1.0 and later, you should call them in the opposite order: `optimizer.step()` before `lr_scheduler.step()`.  Failure to do this will result in PyTorch skipping the first value of the learning rate schedule. See more details at https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate
+  warnings.warn("Detected call of `lr_scheduler.step()` before `optimizer.step()`. "
+----------------- Options ---------------
+               batch_size: 1                             
+                    beta1: 0.5                           
+          checkpoints_dir: ./checkpoints                 
+           continue_train: False                         
+                crop_size: 256                           
+                 dataroot: ./datasets/PBVS-23-Data/      	[default: None]
+             dataset_mode: aligned                       
+                direction: AtoB                          
+              display_env: main                          
+             display_freq: 400                           
+               display_id: 1                             
+            display_ncols: 4                             
+             display_port: 8097                          
+           display_server: http://localhost              
+          display_winsize: 256                           
+                    epoch: latest                        
+              epoch_count: 1                             
+                 gan_mode: vanilla                       
+                  gpu_ids: 0                             
+                init_gain: 0.02                          
+                init_type: normal                        
+                 input_nc: 1                             	[default: 3]
+                  isTrain: True                          	[default: None]
+                lambda_L1: 100.0                         
+                load_iter: 0                             	[default: 0]
+                load_size: 286                           
+                       lr: 0.0002                        
+           lr_decay_iters: 50                            
+                lr_policy: linear                        
+         max_dataset_size: inf                           
+                    model: pix2pix                       	[default: cycle_gan]
+                 n_epochs: 500                           	[default: 100]
+           n_epochs_decay: 100                           
+               n_layers_D: 3                             
+                     name: Sar2Eo-1                      	[default: experiment_name]
+                      ndf: 64                            
+                     netD: basic                         
+                     netG: unet_256                      
+                      ngf: 64                            
+               no_dropout: False                         
+                  no_flip: False                         
+                  no_html: False                         
+                     norm: batch                         
+              num_threads: 4                             
+                output_nc: 1                             	[default: 3]
+                    phase: train                         
+                pool_size: 0                             
+               preprocess: resize_and_crop               
+               print_freq: 100                           
+             save_by_iter: False                         
+          save_epoch_freq: 5                             
+         save_latest_freq: 5000                          
+           serial_batches: False                         
+                   suffix:                               
+         update_html_freq: 1000                          
+                use_wandb: True                          	[default: False]
+                  verbose: False                         
+       wandb_project_name: SAR-2-EO-Translation          	[default: CycleGAN-and-pix2pix]
+----------------- End -------------------
+dataset [AlignedDataset] was created
+The number of training images = 68151
+initialize network with normal
+initialize network with normal
+model [Pix2PixModel] was created
+---------- Networks initialized -------------
+[Network G] Total number of parameters : 54.408 M
+[Network D] Total number of parameters : 2.765 M
+-----------------------------------------------
+Exception in user code:
+------------------------------------------------------------
+
+
+Could not connect to Visdom server. 
+ Trying to start a server....
+Command: /home/csgrad/mreza/anaconda3/envs/pix2pix/bin/python -m visdom.server -p 8097 &>/dev/null &
+create web directory ./checkpoints/Sar2Eo-1/web...
+learning rate 0.0002000 -> 0.0002000
+slurmstepd: error: *** JOB 137685 ON node04 CANCELLED AT 2023-05-02T01:58:04 ***
