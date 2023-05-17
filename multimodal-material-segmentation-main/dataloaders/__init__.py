@@ -1,5 +1,6 @@
 from dataloaders.datasets import multimodal_dataset    #, cityscapes, coco, combine_dbs, pascal, sbd, multimodal_dataset
 from torch.utils.data import DataLoader
+from dataloaders.datasets import multimodal_dataset_2
 
 
 def make_data_loader(args, **kwargs):
@@ -43,6 +44,25 @@ def make_data_loader(args, **kwargs):
         train_set = multimodal_dataset.MultimodalDatasetSegmentation(args, split='train')
         val_set = multimodal_dataset.MultimodalDatasetSegmentation(args, split='val')
         test_set = multimodal_dataset.MultimodalDatasetSegmentation(args, split='test')
+        # test_set = multimodal_dataset.MultimodalDatasetSegmentation(args, split='visualize')
+
+        num_class = train_set.NUM_CLASSES
+        train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, **kwargs)
+        val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, **kwargs)
+        test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, **kwargs)
+
+        return train_loader, val_loader, test_loader, num_class
+
+    else:
+        raise NotImplementedError
+
+
+def make_data_loader2(args, **kwargs):
+    print(args.dataset)
+    if args.dataset == 'multimodal_dataset':
+        train_set = multimodal_dataset.MultimodalDatasetSegmentation2(args, split='train')
+        val_set = multimodal_dataset.MultimodalDatasetSegmentation2(args, split='val')
+        test_set = multimodal_dataset.MultimodalDatasetSegmentation2(args, split='test')
         # test_set = multimodal_dataset.MultimodalDatasetSegmentation(args, split='visualize')
 
         num_class = train_set.NUM_CLASSES
