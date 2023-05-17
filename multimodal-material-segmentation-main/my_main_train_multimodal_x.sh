@@ -11,7 +11,7 @@
 
 conda activate mml
 
-CUDA_VISIBLE_DEVICES=0,1 python my_training_script_x.py \
+CUDA_VISIBLE_DEVICES=0,1 python my_training_script_2.py \
   --backbone resnet \
   --lr 0.05 \
   --workers 1 \
