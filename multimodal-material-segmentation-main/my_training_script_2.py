@@ -32,7 +32,29 @@ class TrainerMultimodal(object):
         kwargs = {'num_workers': args.workers, 'pin_memory': True}
         self.train_loader, self.val_loader, self.test_loader, self.nclass = make_data_loader2(args, **kwargs)
 
-        model = MMDeepLabSEMask(num_classes=20,
+        # model = MMDeepLabSEMask(num_classes=20,
+        #                 backbone=args.backbone,
+        #                 output_stride=args.out_stride,
+        #                 sync_bn=args.sync_bn,
+        #                 freeze_bn=args.freeze_bn,
+        #                 use_nir=args.use_nir,
+        #                 use_aolp=args.use_aolp,
+        #                 use_dolp=args.use_dolp,
+        #                 use_pol=args.use_pol,
+        #                 use_segmap=args.use_segmap,
+        #                 enable_se=args.enable_se)
+        # model = MMDeepLabSEMask2(num_classes=20,
+        #                 backbone=args.backbone,
+        #                 output_stride=args.out_stride,
+        #                 sync_bn=args.sync_bn,
+        #                 freeze_bn=args.freeze_bn,
+        #                 use_nir=args.use_nir,
+        #                 use_aolp=args.use_aolp,
+        #                 use_dolp=args.use_dolp,
+        #                 use_pol=args.use_pol,
+        #                 use_segmap=args.use_segmap,
+        #                 enable_se=args.enable_se)
+        model = MMDeepLabSEMaskWithNorm(num_classes=20,
                         backbone=args.backbone,
                         output_stride=args.out_stride,
                         sync_bn=args.sync_bn,
@@ -42,7 +64,8 @@ class TrainerMultimodal(object):
                         use_dolp=args.use_dolp,
                         use_pol=args.use_pol,
                         use_segmap=args.use_segmap,
-                        enable_se=args.enable_se)
+                        enable_se=args.enable_se,
+                        norm=args.norm)
 
         print(model)
                         
@@ -486,6 +509,8 @@ if __name__ == "__main__":
     parser.add_argument('--list-folder', type=str, default='list_folder1')
     parser.add_argument('--is-multimodal', action='store_true', default=True,
                         help='use multihead architecture')
+    parser.add_argument('--norm', type=str, default='avg',
+                        help='avg, bn or bnr')
 
     # ------------------- Wandb -------------------
     args = parser.parse_args()
@@ -542,7 +567,7 @@ if __name__ == "__main__":
     # torch.backends.cudnn.deterministic = True
     # torch.backends.cudnn.benchmark = False
 
-    # wandb.init(project="Material-Segmentation-MCubeS", entity="kaykobad", name=args.model_name)
+    wandb.init(project="Material-Segmentation-MCubeS", entity="kaykobad", name=args.model_name)
 
     trainer = TrainerMultimodal(args)
     # if args.is_multimodal:
@@ -560,7 +585,7 @@ if __name__ == "__main__":
         if not trainer.args.no_val and epoch % args.eval_interval == (args.eval_interval - 1):
             log_data_2 = trainer.validation(epoch)
             log_data.update(log_data_2)
-        # wandb.log(log_data)
+        wandb.log(log_data)
 
     trainer.writer.close()
     print(args)

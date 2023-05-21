@@ -20,7 +20,7 @@ CUDA_VISIBLE_DEVICES=0,1 python my_training_script.py \
   --ratio 3 \
   --gpu-ids 0,1 \
   --checkname MMDeepLabAD \
-  --model-name MMDeepLabAD-Batch-8-RGB+NIR+DoLP \
+  --model-name MMDeepLabAD-Batch-8-RGB+AoLP+DoLP-2 \
   --eval-interval 1 \
   --loss-type ce \
   --dataset multimodal_dataset \
