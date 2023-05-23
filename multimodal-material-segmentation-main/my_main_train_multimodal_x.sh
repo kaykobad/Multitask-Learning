@@ -20,13 +20,13 @@ CUDA_VISIBLE_DEVICES=0,1 python my_training_script_2.py \
   --ratio 3 \
   --gpu-ids 0,1 \
   --checkname MMDeepLabSEMaskNorm \
-  --model-name MMDeepLabSEMask-Batch-8-RGB+NIR+Pol-BnR \
+  --model-name MMDeepLabSEMask-Batch-8-RGB+NIR+Pol-2-Avg \
   --eval-interval 1 \
   --loss-type ce \
   --dataset multimodal_dataset \
   --list-folder list_folder \
   --use-pretrained-resnet \
   --is-multimodal \
+  --norm avg \
   --use-nir \
-  --use-pol \
-  --norm bnr 
+  --use-pol
