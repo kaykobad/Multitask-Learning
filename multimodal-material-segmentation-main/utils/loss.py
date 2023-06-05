@@ -83,6 +83,7 @@ class SegmentationLosses(object):
         #a=nn.Sigmoid()
         #print(a(logit))
         #print(target.long().size())
+        # print(logit.shape, target.long().shape)
         
         loss = criterion(logit, target.long())
         #print(loss)

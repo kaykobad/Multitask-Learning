@@ -1,6 +1,7 @@
 from dataloaders.datasets import multimodal_dataset    #, cityscapes, coco, combine_dbs, pascal, sbd, multimodal_dataset
 from torch.utils.data import DataLoader
 from dataloaders.datasets import multimodal_dataset_2
+# from dataloaders.datasets import nyudv2
 
 
 def make_data_loader(args, **kwargs):
@@ -71,6 +72,16 @@ def make_data_loader2(args, **kwargs):
         test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, **kwargs)
 
         return train_loader, val_loader, test_loader, num_class
+    
+    elif args.dataset == 'nyudv2':
+        train_set = nyudv2.NYUDv2(args, split='train')
+        test_set = nyudv2.NYUDv2(args, split='test')
+
+        num_class = train_set.NUM_CLASSES
+        train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, **kwargs)
+        test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, **kwargs)
+
+        return train_loader, test_loader, num_class
 
     else:
         raise NotImplementedError

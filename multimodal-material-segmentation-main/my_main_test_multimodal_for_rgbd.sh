@@ -1,0 +1,19 @@
+CUDA_VISIBLE_DEVICES=0,1 python my_testing_script_for_rgbd.py \
+  --backbone resnet \
+  --lr 0.05 \
+  --workers 1 \
+  --epochs 1000 \
+  --batch-size 1 \
+  --pth-path ./run/nyudv2/MMSNet/experiment_5/MMSNet-NYU40-B8-RGB+Depth-Avg-CE_best_test.pth.tar \
+  --ratio 3 \
+  --gpu-ids 0,1 \
+  --eval-interval 1 \
+  --loss-type ce \
+  --dataset nyudv2 \
+  --checkname MMSNet \
+  --list-folder list_folder \
+  --use-pretrained-resnet \
+  --is-multimodal \
+  --norm avg \
+  --use-rgb \
+  --use-depth

@@ -29,3 +29,48 @@ def calculate_weigths_labels(dataset, dataloader, num_classes):
     np.save(classes_weights_path1, z)
 
     return ret
+
+
+def calculate_weigths_labels_for_all(train_loader, test_loader, num_classes):
+    # Create an instance from the data loader
+    z = None
+    # Initialize tqdm
+    tqdm_batch = tqdm(train_loader)
+    print('Calculating classes weights')
+    for sample in tqdm_batch:
+        y = sample['label']
+        y = y.detach().cpu().numpy()
+        # mask = (y >= 0) & (y < num_classes)
+        # labels = y[mask].astype(np.uint8)
+        count_l = np.bincount(y.astype(np.uint8).flatten(), minlength=num_classes)
+        if z is None:
+            z = count_l
+        else:
+            z += count_l
+    tqdm_batch.close()
+    total_frequency = np.sum(z)
+    print("Total Training Pixels: ", total_frequency)
+    print("Frequency of Training Pixels: ", z)
+
+
+    # Create an instance from the data loader
+    z = None
+    # Initialize tqdm
+    tqdm_batch = tqdm(test_loader)
+    print('Calculating classes weights')
+    for sample in tqdm_batch:
+        y = sample['label']
+        y = y.detach().cpu().numpy()
+        # mask = (y >= 0) & (y < num_classes)
+        # labels = y[mask].astype(np.uint8)
+        count_l = np.bincount(y.astype(np.uint8).flatten(), minlength=num_classes)
+        if z is None:
+            z = count_l
+        else:
+            z += count_l
+    tqdm_batch.close()
+    total_frequency = np.sum(z)
+    print("Total Testing Pixels: ", total_frequency)
+    print("Frequency of Testing Pixels: ", z)
+
+    # return ret

@@ -1,17 +1,15 @@
 import argparse
 import os
-# import dataloaders
-from dataloaders.datasets.multimodal_dataset_2 import MultimodalDatasetSegmentation2
-from torch.utils.data import DataLoader
+import wandb
 import numpy as np
 from tqdm import tqdm
 import random
-import matplotlib.pyplot as plt
-
 from mypath import Path
-from dataloaders import make_data_loader
+from dataloaders.rgbd.prepare_data import prepare_data
+from torch.utils.data import DataLoader
+from dataloaders.datasets import multimodal_dataset_2
+from dataloaders import make_data_loader, make_data_loader2
 from modeling.sync_batchnorm.replicate import patch_replication_callback
-from modeling.my_deeplab_impl_2 import *
 from modeling.my_deeplab_impl_3 import *
 from utils.loss import SegmentationLosses
 from utils.calculate_weights import calculate_weigths_labels
@@ -19,88 +17,27 @@ from utils.lr_scheduler import LR_Scheduler
 from utils.saver import Saver
 from utils.summaries import TensorboardSummary
 from utils.metrics import Evaluator
-import matplotlib.image
 import cv2
 
-mIoUs = []
-FWIoUs = []
-
-
-LABEL_COLORS_NEW_JP = {
-    "#2ca02c" : "アスファルト",      #0
-    "#1f77b4" : "コンクリート",     #1
-    "#ff7f0e" : "金属",        #2
-    "#d62728" : "白線", #3
-    "#8c564b" : "布",#4
-    "#7f7f7f" : "ガラス",        #5
-    "#bcbd22" : "セメント",      #6
-    "#ff9896" : "プラスチック",      #7
-    "#17becf" : "ゴム",#8
-    "#aec7e8" : "砂・土",         #9
-    "#c49c94" : "砂利",       #10
-    "#c5b0d5" : "陶器",      #11
-    "#f7b6d2" : "石",  #12
-    "#c7c7c7" : "レンガ",        #13
-    "#dbdb8d" : "草",        #14
-    "#9edae5" : "木",         #15
-    "#393b79" : "葉",         #16
-    "#6b6ecf" : "水",        #17
-    "#9c9ede" : "人体",   #18
-    "#637939" : "空"}          #19
-
-LABEL_COLORS_NEW_EN = {
-    "#2ca02c" : "asphalt",      #0
-    "#1f77b4" : "concrete",     #1
-    "#ff7f0e" : "metal",        #2
-    "#d62728" : "road marking", #3
-    "#8c564b" : "fabric, leather",#4
-    "#7f7f7f" : "glass",        #5
-    "#bcbd22" : "plaster",      #6
-    "#ff9896" : "plastic",      #7
-    "#17becf" : "rubber",#8
-    "#aec7e8" : "sand",         #9
-    "#c49c94" : "gravel",       #10
-    "#c5b0d5" : "ceramic",      #11
-    "#f7b6d2" : "cobblestone",  #12
-    "#c7c7c7" : "brick",        #13
-    "#dbdb8d" : "grass",        #14
-    "#9edae5" : "wood",         #15
-    "#393b79" : "leaf",         #16
-    "#6b6ecf" : "water",        #17
-    "#9c9ede" : "human body",   #18
-    "#637939" : "sky"}          #19
-
-
-def make_data_loader(args, **kwargs):
-    # train_set = multimodal_dataset.MultimodalDatasetSegmentation(args, split='train')
-    # val_set = multimodal_dataset.MultimodalDatasetSegmentation(args, split='val')
-    test_set = MultimodalDatasetSegmentation2(args, split='visualize')
-    # test_set = multimodal_dataset.MultimodalDatasetSegmentation(args, split='visualize')
-
-    num_class = 20
-    # train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, **kwargs)
-    # val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, **kwargs)
-    test_loader = DataLoader(test_set, batch_size=args.batch_size, shuffle=False, **kwargs)
-
-    return 0, 0, test_loader, num_class
-       
-        
+     
 class TesterMultimodal(object):
     def __init__(self, args):
         self.args = args
 
+        # Define Saver
+        self.saver = Saver(args)
+        self.saver.save_experiment_config()
+
         # Define Tensorboard Summary
-        self.summary = TensorboardSummary(f'{os.path.dirname(args.pth_path)}/test')
+        self.summary = TensorboardSummary(self.saver.experiment_dir)
         self.writer = self.summary.create_summary()
         
         # Define Dataloader
         kwargs = {'num_workers': args.workers, 'pin_memory': True}
-        self.train_loader, self.val_loader, self.test_loader, self.nclass = make_data_loader(args, **kwargs)
+        self.train_loader, self.test_loader = prepare_data(args, ckpt_dir=None, with_input_orig=True)
+        self.nclass = self.train_loader.dataset.n_classes_without_void
 
-        # Define network
-        input_dim = 3
-
-        model_path = "saved_models/MMSNet/EncoderFusionNorm/MMDeepLabSEMask-Batch-8-RGB+NIR+Pol-Avg_best_test.pth.tar"
+        model_path = args.pth_path
         checkpoint = torch.load(model_path)
         
         # self.model = DeepLab(num_classes=20,
@@ -130,41 +67,31 @@ class TesterMultimodal(object):
         #                 use_segmap=args.use_segmap,
         #                 enable_se=args.enable_se)
 
-        # self.model = MMDeepLab2(num_classes=20,
+        # self.model = MMDeepLabSEMask(num_classes=20,
         #                 backbone=args.backbone,
         #                 output_stride=args.out_stride,
         #                 sync_bn=args.sync_bn,
         #                 freeze_bn=args.freeze_bn,
-        #                 use_nir=args.use_nir,
+        #                 use_nir=True,
         #                 use_aolp=args.use_aolp,
         #                 use_dolp=args.use_dolp,
+        #                 use_pol=True,
         #                 use_segmap=args.use_segmap,
         #                 enable_se=args.enable_se)
 
-        self.model = MMDeepLabSEMaskWithNorm(num_classes=20,
+        self.model = MMDeepLabSEMaskWithNormForRGBD(num_classes=self.nclass,
                         backbone=args.backbone,
                         output_stride=args.out_stride,
                         sync_bn=args.sync_bn,
                         freeze_bn=args.freeze_bn,
-                        use_nir=True or args.use_nir,
-                        use_aolp=args.use_aolp,
-                        use_dolp=args.use_dolp,
-                        use_pol=True or args.use_pol,
-                        use_segmap=args.use_segmap,
-                        enable_se=args.enable_se,
+                        use_rgb=args.use_rgb,
+                        use_depth=args.use_depth,
                         norm=args.norm)
 
         self.model.load_state_dict(checkpoint['state_dict'])
         self.model.cuda()
         pytorch_total_params = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
         print(pytorch_total_params)
-
-        # train_params = [{'params': model.get_1x_lr_params(), 'lr': args.lr},
-        #                 {'params': model.get_10x_lr_params(), 'lr': args.lr * 10}]
-        
-        # Define Optimizer
-        # optimizer = torch.optim.SGD(model.parameters(), momentum=args.momentum,lr=args.lr,
-        #                             weight_decay=args.weight_decay, nesterov=args.nesterov)
 
         # Define Criterion
         # whether to use class balanced weights
@@ -179,45 +106,9 @@ class TesterMultimodal(object):
             weight = None
         # # self.criterion = SegmentationLosses(weight=weight, cuda=args.cuda, ignore_index=0).build_loss(mode=args.loss_type)
         self.criterion = SegmentationLosses(weight=weight, cuda=args.cuda).build_loss(mode=args.loss_type)
-        # self.model, self.optimizer = model, optimizer
-
-        # # Load model parameters
-        # checkpoint = torch.load(args.pth_path)
-        # self.model.load_state_dict(checkpoint['state_dict'])
         
         # # Define Evaluator
         self.evaluator = Evaluator(self.nclass)
-        # # Define lr scheduler
-        # self.scheduler = LR_Scheduler(args.lr_scheduler, args.lr,
-        #                                     args.epochs, len(self.train_loader))
-
-        # Using cuda
-        # if args.cuda:
-        #     self.model = torch.nn.DataParallel(self.model, device_ids=self.args.gpu_ids)
-        #     patch_replication_callback(self.model)
-        #     self.model = self.model.cuda()
-
-        # Resuming checkpoint
-        # self.best_pred = 0.0
-        # if args.resume is not None:
-        #     if not os.path.isfile(args.resume):
-        #         raise RuntimeError("=> no checkpoint found at '{}'" .format(args.resume))
-        #     checkpoint = torch.load(args.resume)
-        #     args.start_epoch = checkpoint['epoch']
-        #     print(checkpoint['epoch'])
-        #     if args.cuda:
-        #         self.model.module.load_state_dict(checkpoint['state_dict'])
-        #     else:
-        #         self.model.load_state_dict(checkpoint['state_dict'])
-        #     if not args.ft:
-        #         self.optimizer.load_state_dict(checkpoint['optimizer'])
-        #     self.best_pred = checkpoint['best_pred']
-        #     print("=> loaded checkpoint '{}' (epoch {})"
-        #           .format(args.resume, checkpoint['epoch']))
-
-        # # Clear start epoch if fine-tuning
-        # if args.ft:
-        #     args.start_epoch = 0
 
     def test(self, epoch=0):
         self.model.eval()
@@ -228,32 +119,28 @@ class TesterMultimodal(object):
         image_all = None
         target_all = None
         output_all = None
+        mIoUs = []
+        FWIoUs = []
         for i, sample in enumerate(tbar):
-            image, target, aolp, dolp, nir, nir_mask, u_map, v_map, mask, pol = \
-                sample['image'], sample['label'], sample['aolp'], sample['dolp'], sample['nir'], sample['nir_mask'], \
-                sample['u_map'], sample['v_map'], sample['mask'], sample['pol']
+            # if i==300:
+            #     break
+            image, target, depth = sample['image'], sample['label'], sample['depth']
+            image_orig, target_orig, depth_orig = sample['image_orig'], sample['label_orig'], sample['depth_orig']
             if self.args.cuda:
-                image, target, aolp, dolp, nir, nir_mask, u_map, v_map, mask, pol = image.cuda(), target.cuda(), aolp.cuda(), dolp.cuda(), nir.cuda(), nir_mask.cuda(), u_map.cuda(), v_map.cuda(), mask.cuda(), pol.cuda()
+                image, target, depth = image.cuda(), target.cuda(), depth.cuda()
 
-            if len(dolp.shape) != 4:  # avoide automatic squeeze in later version of pytorch data loading
-                dolp = dolp.unsqueeze(1)
-            if len(nir.shape) != 4:  # avoide automatic squeeze in later version of pytorch data loading
-                nir = nir.unsqueeze(1)
-            if len(mask.shape) != 4:  # avoide automatic squeeze in later version of pytorch data loading
-                mask = mask.unsqueeze(1)
+            if len(depth.shape) != 4:  # avoide automatic squeeze in later version of pytorch data loading
+                depth = depth.unsqueeze(1)
+                # print(depth.shape)
 
-            aolp = aolp if self.args.use_aolp else None
-            dolp = dolp if self.args.use_dolp else None
-            pol = pol if self.args.use_pol else None
-            nir  = nir  if self.args.use_nir else None
-            segmap = mask if self.args.use_segmap else None
-            nir_mask = nir_mask  if self.args.use_nir else None
+            rgb = image if self.args.use_rgb else None
+            depth = depth if self.args.use_depth else None
 
             with torch.cuda.amp.autocast():
                 with torch.no_grad():
-                    # output = self.model(image)
-                    output = self.model(image, nir=nir, aolp=aolp, dolp=dolp, segmap=segmap, pol=pol)
-                loss = self.criterion(output, target, nir_mask)
+                    output = self.model(rgb=rgb, depth=depth)
+                    loss = self.criterion(output, target)
+
             test_loss += loss.item()
             tbar.set_description('Test loss: %.3f' % (test_loss / (i + 1)))
             
@@ -272,6 +159,7 @@ class TesterMultimodal(object):
             # Add batch sample into evaluator
             self.evaluator.add_batch(target_, pred)
 
+            # Uncomment if you want to save prediction
             # My evaluator
             ev = Evaluator(self.nclass)
             ev.add_batch(target_, pred)
@@ -281,20 +169,23 @@ class TesterMultimodal(object):
             mIoUs.append(this_mIoU)
             FWIoUs.append(this_FWIoU)
 
-            # Save the images
-            # print(f"Output shape: {output.shape}, Target Shape: {target.shape}")
-            img = image.cpu().numpy()[0]
-            # print(img.shape)
-            # img = img.reshape(1024, 1024, 3)
-            t = target.cpu().numpy()
-            t = t.reshape(512, 512, 1)
-            p = pred.reshape(512, 512, 1)
+            # # Save the images
+            # # print(f"Output shape: {output.shape}, Target Shape: {target.shape}")
+            # img = image_orig.cpu().numpy()[0]
+            # # print(img.shape)
+            # # img = img.reshape(1024, 1024, 3)
+            # t = target.cpu().numpy()
+            # t = t.reshape(1024, 1024, 1)
+            p = pred.reshape(480, 640, 1)
             # print(f"Image reShape: {img.shape}, Output reshape: {p.shape}, Target reShape: {t.shape}")
             # matplotlib.image.imsave(f'predictions/{i}-traget.png', t)
             # matplotlib.image.imsave(f'predictions/{i}-prediction.png', o)
             # cv2.imwrite(f'predictions/{i}-image.png', img)
             # cv2.imwrite(f'predictions/{i}-target.png', t)
-            cv2.imwrite(f'predictions/MMDeepLabSEMaskAvg/rgb/{i}-prediction.png', p)
+            cv2.imwrite(f'predictions/nyudv2/test/{i}-prediction.png', p)
+            # cv2.imwrite(f'predictions/nyudv2/test/{i}-rgb.png', image_orig.numpy())
+            # cv2.imwrite(f'predictions/nyudv2/test/{i}-depth.png', depth_orig.numpy())
+            # cv2.imwrite(f'predictions/nyudv2/test/{i}-target.png', target_orig.numpy())
             # cv2.imwrite(f'predictions/{i}-image.png', img)
 
             # out = output.data.cpu().numpy()[0]
@@ -311,19 +202,22 @@ class TesterMultimodal(object):
         mIoU = self.evaluator.Mean_Intersection_over_Union()
         FWIoU = self.evaluator.Frequency_Weighted_Intersection_over_Union()
         confusion_matrix = self.evaluator.confusion_matrix
-        np.save(f'{os.path.dirname(args.pth_path)}/test/confusion_matrix.npy',confusion_matrix)
+        # np.save(f'{os.path.dirname(args.pth_path)}/test/confusion_matrix.npy',confusion_matrix)
+        np.save('nyud_test_confusion_matrix.npy', confusion_matrix)
+        print("Confussion Matrix:", confusion_matrix)
 
         self.writer.add_scalar('test/mIoU', mIoU, epoch)
         self.writer.add_scalar('test/Acc', Acc, epoch)
         self.writer.add_scalar('test/Acc_class', Acc_class, epoch)
         self.writer.add_scalar('test/fwIoU', FWIoU, epoch)
-        self.summary.visualize_test_image(self.writer, self.args.dataset, image_all, target_all, output_all, 0)
+        # self.summary.visualize_test_image(self.writer, self.args.dataset, image_all, target_all, output_all, 0)
         
         print('Test:')
         print('[Epoch: %d, numImages: %5d]' % (epoch, i * self.args.batch_size + image.data.shape[0]))
         print("Acc:{}, Acc_class:{}, mIoU:{}, fwIoU: {}".format(Acc, Acc_class, mIoU, FWIoU))
         print("mIoUs:", mIoUs)
         print("FWIoUs:", FWIoUs)
+        print(np.argsort(np.array(mIoUs)))
 
         # print(f"Output shape: {output.shape}, Target Shape: {target.shape}")
         # matplotlib.image.imsave(f'predictions/{i}-traget.png', target.cpu().numpy())
@@ -349,21 +243,25 @@ class TesterMultimodal(object):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="PyTorch DeeplabV3Plus Training")
+    parser.add_argument('--use-rgb', action='store_true', default=False,
+                        help='use rgb')
+    parser.add_argument('--use-depth', action='store_true', default=False,
+                        help='use depth')
     parser.add_argument('--backbone', type=str, default='resnet',
                         choices=['resnet', 'xception', 'drn', 'mobilenet', 'resnet_adv', 'xception_adv','resnet_condconv'],
                         help='backbone name (default: resnet)')
     parser.add_argument('--out-stride', type=int, default=16,
                         help='network output stride (default: 8)')
     parser.add_argument('--dataset', type=str, default='multimodal_dataset',
-                        choices=['pascal', 'coco', 'cityscapes', 'kitti', 'kitti_advanced', 'kitti_advanced_manta', 'handmade_dataset', 'handmade_dataset_stereo', 'multimodal_dataset'],
+                        choices=['nyudv2', 'pascal', 'coco', 'cityscapes', 'kitti', 'kitti_advanced', 'kitti_advanced_manta', 'handmade_dataset', 'handmade_dataset_stereo', 'multimodal_dataset'],
                         help='dataset name (default: pascal)')
     parser.add_argument('--use-sbd', action='store_true', default=False,
                         help='whether to use SBD dataset (default: True)')
     parser.add_argument('--workers', type=int, default=4,
                         metavar='N', help='dataloader threads')
-    parser.add_argument('--base-size', type=int, default=513,
+    parser.add_argument('--base-size', type=int, default=512,
                         help='base image size')
-    parser.add_argument('--crop-size', type=int, default=513,
+    parser.add_argument('--crop-size', type=int, default=512,
                         help='crop image size')
     parser.add_argument('--sync-bn', type=bool, default=None,
                         help='whether to use sync bn (default: auto)')
@@ -447,8 +345,33 @@ if __name__ == "__main__":
                         help='set the pth file path')
     parser.add_argument('--norm', type=str, default='avg',
                         help='avg, bn or bnr')
+    parser.add_argument('--aug-scale-min', default=1.0, type=float,
+                        help='the minimum scale for random rescaling the '
+                        'training data.')
+    parser.add_argument('--aug-scale-max', default=1.4, type=float,
+                        help='the maximum scale for random rescaling the '
+                        'training data.')
+    parser.add_argument('--raw-depth', action='store_true', default=False,
+                        help='Whether to use the raw depth values instead of'
+                        'the refined depth values')
+
+    parser.add_argument('--height', type=int, default=480,
+                        help='height of the training images. '
+                        'Images will be resized to this height.')
+    parser.add_argument('--width', type=int, default=640,
+                        help='width of the training images. '
+                        'Images will be resized to this width.')
+    parser.add_argument('--class-weighting', type=str,
+                        default='median_frequency',
+                        choices=['median_frequency', 'logarithmic', 'None'],
+                        help='which weighting mode to use for weighting the '
+                        'classes of the unbalanced dataset'
+                        'for the loss function during training.')
 
     args = parser.parse_args()
+    args.valid_full_res = False
+    args.batch_size_valid = args.batch_size
+    args.c_for_logarithmic_weighting = 1.02
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     if args.cuda:
         try:
@@ -462,16 +385,16 @@ if __name__ == "__main__":
         else:
             args.sync_bn = False
 
-    # default settings for epochs, batch_size and lr
-    if args.epochs is None:
-        epoches = {
-            'coco': 30,
-            'cityscapes': 200,
-            'pascal': 50,
-            'kitti': 50,
-            'kitti_advanced': 50
-        }
-        args.epochs = epoches[args.dataset.lower()]
+    # # default settings for epochs, batch_size and lr
+    # if args.epochs is None:
+    #     epoches = {
+    #         'coco': 30,
+    #         'cityscapes': 200,
+    #         'pascal': 50,
+    #         'kitti': 50,
+    #         'kitti_advanced': 50
+    #     }
+    #     args.epochs = epoches[args.dataset.lower()]
 
     if args.batch_size is None:
         args.batch_size = 4 * len(args.gpu_ids)
@@ -479,18 +402,18 @@ if __name__ == "__main__":
     if args.test_batch_size is None:
         args.test_batch_size = args.batch_size
 
-    if args.lr is None:
-        lrs = {
-            'coco': 0.1,
-            'cityscapes': 0.01,
-            'pascal': 0.007,
-            'kitti' : 0.01,
-            'kitti_advanced' : 0.01
-        }
-        args.lr = lrs[args.dataset.lower()] / (4 * len(args.gpu_ids)) * args.batch_size
+    # if args.lr is None:
+    #     lrs = {
+    #         'coco': 0.1,
+    #         'cityscapes': 0.01,
+    #         'pascal': 0.007,
+    #         'kitti' : 0.01,
+    #         'kitti_advanced' : 0.01
+    #     }
+    #     args.lr = lrs[args.dataset.lower()] / (4 * len(args.gpu_ids)) * args.batch_size
 
-    if args.checkname is None:
-        args.checkname = 'deeplab-'+str(args.backbone)
+    # if args.checkname is None:
+    #     args.checkname = 'deeplab-'+str(args.backbone)
     print(args)
     # input('Check arguments! Press Enter...')
     # os.environ['PYTHONHASHSEED'] = str(args.seed)
@@ -503,15 +426,15 @@ if __name__ == "__main__":
     # torch.backends.cudnn.benchmark = False
 
     tester = TesterMultimodal(args)
-    exit
+    # exit
 
     # if args.is_multimodal:
     #     print("USE Multimodal Model")
     #     tester = TesterMultimodal(args)
     # else:
     #     tester = TesterAdv(args)
-    print('Starting Epoch:', tester.args.start_epoch)
-    print('Total Epoches:', tester.args.epochs)
+    # print('Starting Epoch:', tester.args.start_epoch)
+    # print('Total Epoches:', tester.args.epochs)
     tester.test()
     tester.writer.close()
     print(args)
