@@ -34,7 +34,7 @@ class TrainerMultimodalRGBD(object):
         # Define Dataloader
         kwargs = {'num_workers': args.workers, 'pin_memory': True}
         self.train_loader, self.test_loader = prepare_data(args, ckpt_dir=None)
-        self.nclass = self.train_loader.dataset.n_classes_without_void + 1
+        self.nclass = self.train_loader.dataset.n_classes_without_void
 
         # calculate_weigths_labels_for_all(self.train_loader, self.test_loader, num_classes=self.nclass)
 
@@ -57,7 +57,16 @@ class TrainerMultimodalRGBD(object):
         #                 use_rgb=args.use_rgb,
         #                 use_depth=args.use_depth,
         #                 norm=args.norm)
-        model = MMDeepLabSEMaskWithNormForRGBD(num_classes=self.nclass,
+        # model = MMDeepLabSEMaskWithNormForRGBD(num_classes=self.nclass,
+        #                 backbone=args.backbone,
+        #                 output_stride=args.out_stride,
+        #                 sync_bn=args.sync_bn,
+        #                 freeze_bn=args.freeze_bn,
+        #                 use_rgb=args.use_rgb,
+        #                 use_depth=args.use_depth,
+        #                 norm=args.norm)
+
+        model = MMDeepLabRegularizedSEMaskWithNormForRGBD(num_classes=self.nclass,
                         backbone=args.backbone,
                         output_stride=args.out_stride,
                         sync_bn=args.sync_bn,
@@ -69,8 +78,11 @@ class TrainerMultimodalRGBD(object):
         print(model)
         pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print("Total Parameters:", pytorch_total_params)
+
+        self.lambda_param = torch.nn.Parameter(torch.tensor(1.0))
                         
         train_params = [{'params': model.get_1x_lr_params(), 'lr': args.lr},
+                        {'params': self.lambda_param, 'lr': args.lr},
                         {'params': model.get_10x_lr_params(), 'lr': args.lr*10}]
         
         # Define Optimizer
@@ -165,8 +177,8 @@ class TrainerMultimodalRGBD(object):
             depth = depth if self.args.use_depth else None
             
             with torch.cuda.amp.autocast():
-                output = self.model(rgb=rgb, depth=depth)
-                loss = self.criterion(output, target)
+                output, reg_loss = self.model(rgb=rgb, depth=depth)
+                loss = self.criterion(output, target) + self.lambda_param * reg_loss
                 # loss = self.criterion(output, target.long())
                 # print(loss)
             scaler.scale(loss).backward()
@@ -252,9 +264,10 @@ class TrainerMultimodalRGBD(object):
 
             with torch.cuda.amp.autocast():
                 with torch.no_grad():
-                    output = self.model(rgb=rgb, depth=depth)
+                    output, reg_loss = self.model(rgb=rgb, depth=depth)
+                    loss = self.criterion(output, target) + self.lambda_param * reg_loss
                     # loss = self.criterion(output, target.long())
-                    loss = self.criterion(output, target)
+                    # loss = self.criterion(output, target)
             test_loss += loss.item()
             tbar.set_description('Test loss: %.3f' % (test_loss / (i + 1)))
             pred = output.data.cpu().numpy()
@@ -506,7 +519,7 @@ if __name__ == "__main__":
     # torch.backends.cudnn.deterministic = True
     # torch.backends.cudnn.benchmark = False
 
-    wandb.init(project="Material-Segmentation-MCubeS", entity="kaykobad", name=args.model_name)
+    # wandb.init(project="Material-Segmentation-MCubeS", entity="kaykobad", name=args.model_name)
 
     trainer = TrainerMultimodalRGBD(args)
     # if args.is_multimodal:
@@ -523,7 +536,7 @@ if __name__ == "__main__":
         log_data.update(log_data_2)
         log_data_2 = trainer.test(epoch)
         log_data.update(log_data_2)
-        wandb.log(log_data)
+        # wandb.log(log_data)
 
     trainer.writer.close()
     print(args)

@@ -52,6 +52,31 @@ class MaskBlock(nn.Module):
         return x
 
 
+class RegularizedMaskBlock(nn.Module):
+    def __init__(self, shape=(256, 256, 256)):
+        super(RegularizedMaskBlock, self).__init__()
+
+        self.mask = nn.Parameter(torch.ones((1, 1, shape[1], shape[2])), requires_grad=True)
+        self.shape = shape
+
+    def forward(self, x):
+        x = torch.mul(x, self.mask)
+        return x
+
+
+class RegularizedSEMaskBlock(nn.Module):
+    def __init__(self, channel, shape):
+        super(RegularizedSEMaskBlock, self).__init__()
+
+        self.se = SEBlock(channel=channel)
+        self.mask = RegularizedMaskBlock(shape=shape)
+
+    def forward(self, x):
+        x = self.se(x)
+        x = self.mask(x)
+        return x
+
+
 class SEMaskBlock(nn.Module):
     def __init__(self, channel, shape):
         super(SEMaskBlock, self).__init__()
@@ -683,6 +708,167 @@ class MMDeepLabSEMaskWithNormForRGBD(nn.Module):
                 else:
                     if isinstance(m[1], nn.Conv2d) or isinstance(m[1], SynchronizedBatchNorm2d) \
                             or isinstance(m[1], nn.BatchNorm2d) or isinstance(m[1], SEMaskBlock):
+                        for p in m[1].parameters():
+                            if p.requires_grad:
+                                yield p
+
+
+class MMDeepLabRegularizedSEMaskWithNormForRGBD(nn.Module):
+    def __init__(self, 
+        backbone='resnet', 
+        output_stride=16, 
+        num_classes=40,      
+        sync_bn=True, 
+        freeze_bn=False,
+        use_rgb=False,
+        use_depth=False,
+        norm='avg',
+    ): 
+        super(MMDeepLabRegularizedSEMaskWithNormForRGBD, self).__init__()
+        self.use_rgb = use_rgb
+        self.use_depth = use_depth
+        self.freeze_bn = freeze_bn
+
+        self.backbones = []
+        self.decoders = []
+        self.num_modalities = 0
+        self.norm = norm
+
+        self.low_level_feature_channels = 256
+        self.low_level_feature_shape = (256, 120, 160)
+
+        self.high_level_feature_channels = 256
+        self.high_level_feature_shape = (256, 30, 40)
+
+        if sync_bn == True:
+            BatchNorm = SynchronizedBatchNorm2d
+        else:
+            BatchNorm = nn.BatchNorm2d
+
+        if self.use_rgb:
+            self.num_modalities += 1
+            self.rgb_backbone = build_backbone(backbone, output_stride, BatchNorm)
+            self.rgb_aspp = build_aspp(backbone, output_stride, BatchNorm)
+            self.rgb_llf = RegularizedSEMaskBlock(self.low_level_feature_channels, self.low_level_feature_shape)
+            self.rgb_hlf = RegularizedSEMaskBlock(self.high_level_feature_channels, self.high_level_feature_shape)
+            self.backbones.extend([self.rgb_backbone, self.rgb_llf, self.rgb_hlf])
+            self.decoders.append(self.rgb_aspp)
+
+        if self.use_depth:
+            self.num_modalities += 1
+            self.depth_backbone = build_backbone(backbone, output_stride, BatchNorm, input_dim=1, pretrained=False)
+            self.depth_aspp = build_aspp(backbone, output_stride, BatchNorm)
+            self.depth_llf = RegularizedSEMaskBlock(self.low_level_feature_channels, self.low_level_feature_shape)
+            self.depth_hlf = RegularizedSEMaskBlock(self.high_level_feature_channels, self.high_level_feature_shape)
+            self.backbones.extend([self.depth_backbone, self.depth_llf, self.depth_hlf])
+            self.decoders.append(self.depth_aspp)
+
+        if self.norm == 'bnr':
+            self.hlf_norm = nn.Sequential(
+                BatchNorm(self.high_level_feature_channels),
+                nn.ReLU(inplace=True)
+            )
+            self.llf_norm = nn.Sequential(
+                BatchNorm(self.low_level_feature_channels),
+                nn.ReLU(inplace=True)
+            )
+            self.backbones.extend([self.hlf_norm, self.llf_norm])
+        elif self.norm == 'bn':
+            self.hlf_norm = BatchNorm(self.high_level_feature_channels)
+            self.llf_norm = BatchNorm(self.low_level_feature_channels)
+            self.backbones.extend([self.hlf_norm, self.llf_norm])
+
+        self.decoder = build_decoder(num_classes, backbone, BatchNorm, num_modalities=self.num_modalities)
+        self.decoders.append(self.decoder)
+        self.hlf_mask = 0
+        self.llf_mask = 0
+
+    def forward(self, rgb=None, depth=None):
+        active_modalities = 0
+        if self.use_rgb and rgb is not None:
+            x1, low_level_feat1 = self.rgb_backbone(rgb)
+            # print(x1.shape, low_level_feat1.shape)
+            x1 = self.rgb_aspp(x1)
+            x1 = self.rgb_hlf(x1)
+            low_level_feat1 = self.rgb_llf(low_level_feat1)
+            # print("---------", x1.shape, low_level_feat1.shape)
+            # x1 = torch.Size([8, 256, 32, 32]),  low_level_feat1 = torch.Size([8, 256, 128, 128])
+            # -------- torch.Size([4, 256, 30, 40]) torch.Size([4, 256, 120, 160])
+            x = x1
+            low_level_feat = low_level_feat1
+            active_modalities += 1
+            self.hlf_mask = self.rgb_hlf.mask.mask
+            self.llf_mask = self.rgb_llf.mask.mask
+
+        if self.use_depth and depth is not None:
+            x2, low_level_feat2 = self.depth_backbone(depth)
+            x2 = self.depth_aspp(x2)
+            x2 = self.depth_hlf(x2)
+            low_level_feat2 = self.depth_llf(low_level_feat2)
+            if self.use_rgb and rgb is not None:
+                x = torch.add(x, x2)
+                low_level_feat = torch.add(low_level_feat, low_level_feat2)
+                self.hlf_mask = self.hlf_mask + self.depth_hlf.mask.mask
+                self.llf_mask = self.llf_mask + self.depth_llf.mask.mask
+            else:
+                x = x2
+                low_level_feat = low_level_feat2
+                self.hlf_mask = self.depth_hlf.mask.mask
+                self.llf_mask = self.depth_llf.mask.mask
+            active_modalities += 1 
+
+        # print("X1 and X shape:", x1.shape, x.shape)
+        # print("low_level_feat1 and low_level_feat shape:", low_level_feat1.shape, low_level_feat.shape)
+
+        if self.norm == 'avg':
+            x = torch.div(x, active_modalities)
+            low_level_feat = torch.div(low_level_feat, active_modalities)
+        else:
+            x = self.hlf_norm(x)
+            low_level_feat = self.llf_norm(low_level_feat)
+        
+        x = self.decoder(x, low_level_feat)
+        x = F.interpolate(x, size=rgb.size()[2:] if self.use_rgb else depth.size()[2:], mode='bilinear', align_corners=True)
+
+        regularization_term = torch.pow(torch.sum(self.hlf_mask) - (self.high_level_feature_shape[1]*self.high_level_feature_shape[2]), 2) + torch.pow(torch.sum(self.llf_mask) - (self.low_level_feature_shape[1]*self.low_level_feature_shape[2]), 2)
+
+        return x, regularization_term
+
+    def freeze_bn(self):
+        for m in self.modules():
+            if isinstance(m, SynchronizedBatchNorm2d):
+                m.eval()
+            elif isinstance(m, nn.BatchNorm2d):
+                m.eval()
+
+    def get_1x_lr_params(self):
+        modules = self.backbones
+        for i in range(len(modules)):
+            for m in modules[i].named_modules():
+                if self.freeze_bn:
+                    if isinstance(m[1], nn.Conv2d):
+                        for p in m[1].parameters():
+                            if p.requires_grad:
+                                yield p
+                else:
+                    if isinstance(m[1], nn.Conv2d) or isinstance(m[1], SynchronizedBatchNorm2d) \
+                            or isinstance(m[1], nn.BatchNorm2d) or isinstance(m[1], RegularizedSEMaskBlock):
+                        for p in m[1].parameters():
+                            if p.requires_grad:
+                                yield p
+
+    def get_10x_lr_params(self):
+        modules = self.decoders
+        for i in range(len(modules)):
+            for m in modules[i].named_modules():
+                if self.freeze_bn:
+                    if isinstance(m[1], nn.Conv2d):
+                        for p in m[1].parameters():
+                            if p.requires_grad:
+                                yield p
+                else:
+                    if isinstance(m[1], nn.Conv2d) or isinstance(m[1], SynchronizedBatchNorm2d) \
+                            or isinstance(m[1], nn.BatchNorm2d) or isinstance(m[1], RegularizedSEMaskBlock):
                         for p in m[1].parameters():
                             if p.requires_grad:
                                 yield p

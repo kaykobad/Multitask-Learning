@@ -19,8 +19,8 @@ CUDA_VISIBLE_DEVICES=0,1 python my_training_script_for_rgbd.py \
   --batch-size 8 \
   --ratio 3 \
   --gpu-ids 0,1 \
-  --checkname MMSNet \
-  --model-name MMSNet-NYU41-B8-RGB+Depth-Avg-CE-R50 \
+  --checkname Test \
+  --model-name MMSNet-NYU40-B8-RGB+Depth-Avg-CE-R50-W-RegMask \
   --eval-interval 1 \
   --loss-type ce \
   --dataset nyudv2 \
